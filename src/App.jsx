@@ -691,6 +691,123 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
   );
 };
 
+const EditTeacherModal = ({ teacher, onSave, onClose }) => {
+  const [form,setForm]=useState({ name:teacher.name||"" });
+  const [saving,setSaving]=useState(false);
+
+  const submit=async()=>{
+    if (!form.name.trim()){alert("Name is required.");return;}
+    setSaving(true);
+    await onSave({ name:form.name.trim() });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Teacher</div>
+        <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
+          {teacher.email} — email and password are changed separately (🔑 reset password).
+        </div>
+        <div style={{display:"grid",gap:8,marginBottom:12}}>
+          <input placeholder="Full Name *" value={form.name}
+            onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={submit} disabled={saving} style={{flex:1}}>
+            {saving?"⏳ Saving...":"💾 Save Changes"}
+          </Btn>
+          <Btn onClick={onClose} color="#e0e0e0" style={{flex:1,color:T.text}}>Cancel</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+const EditSectionModal = ({ section, onSave, onClose }) => {
+  const [form,setForm]=useState({
+    name:section.name||"", grade_level:section.grade_level,
+  });
+  const [saving,setSaving]=useState(false);
+
+  const submit=async()=>{
+    if (!form.name.trim()){alert("Section name is required.");return;}
+    setSaving(true);
+    await onSave({ name:form.name.trim(), grade_level:parseInt(form.grade_level) });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Section</div>
+        <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
+          Changing the grade level moves this section (and its students) to that grade.
+        </div>
+        <div style={{display:"grid",gap:8,marginBottom:12}}>
+          <input placeholder="Section Name *" value={form.name}
+            onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+          <select value={form.grade_level}
+            onChange={e=>setForm(p=>({...p,grade_level:e.target.value}))}>
+            {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={submit} disabled={saving} style={{flex:1}}>
+            {saving?"⏳ Saving...":"💾 Save Changes"}
+          </Btn>
+          <Btn onClick={onClose} color="#e0e0e0" style={{flex:1,color:T.text}}>Cancel</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+const EditSubjectModal = ({ subject, isMapeh, onSave, onClose }) => {
+  const [form,setForm]=useState({
+    name:subject.name||"", grade_level:subject.grade_level,
+  });
+  const [saving,setSaving]=useState(false);
+
+  const submit=async()=>{
+    if (!form.name.trim()){alert("Subject name is required.");return;}
+    setSaving(true);
+    await onSave({ name:form.name.trim(), grade_level:parseInt(form.grade_level) });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Subject</div>
+        {isMapeh&&(
+          <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
+            This is the MAPEH parent — its name is locked, but you can still move its
+            grade level (its PE and Health / Music and Arts components move with it).
+          </div>
+        )}
+        <div style={{display:"grid",gap:8,marginBottom:12}}>
+          <input placeholder="Subject Name *" value={form.name} disabled={isMapeh}
+            onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+          <select value={form.grade_level}
+            onChange={e=>setForm(p=>({...p,grade_level:e.target.value}))}>
+            {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={submit} disabled={saving} style={{flex:1}}>
+            {saving?"⏳ Saving...":"💾 Save Changes"}
+          </Btn>
+          <Btn onClick={onClose} color="#e0e0e0" style={{flex:1,color:T.text}}>Cancel</Btn>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const SectionGroup = ({ sectionName, adviserName, total, males, females, qualStats, children }) => {
   const [open,setOpen]=useState(true);
   return (
@@ -2459,6 +2576,9 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [loading,setLoading]=useState(true);
   const [editGrade,setEditGrade]=useState(null);
   const [editStudent,setEditStudent]=useState(null);
+  const [editTeacher,setEditTeacher]=useState(null);
+  const [editSection,setEditSection]=useState(null);
+  const [editSubject,setEditSubject]=useState(null);
   const [resetModal,setResetModal]=useState(null);
   const [addingStudent,setAddingStudent]=useState(false);
   const [qualifications,setQualifications]=useState([]); // [{id,name}] — admin-managed TVE qualifications
@@ -2623,6 +2743,15 @@ const AdminDashboard = ({ profile, onLogout }) => {
     notify("✅ Teacher added!"); fetchAll();
   };
 
+  const updateTeacher=async updates=>{
+    if (!editTeacher) return;
+    const {error}=await supabase.from("profiles").update(updates).eq("id",editTeacher.id);
+    if (error){notify("❌ "+error.message);return;}
+    notify("✅ Teacher updated!");
+    setEditTeacher(null);
+    fetchAll();
+  };
+
   const delTeacher=async id=>{
     if (!window.confirm("Delete this teacher?")) return;
     notify("⏳ Deleting...");
@@ -2705,6 +2834,21 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const reassignSubjectSection=async(subId,sectionId)=>{
     await supabase.from("subjects").update({section_id:sectionId||null}).eq("id",subId);
     notify("✅ Section scope updated!"); fetchAll();
+  };
+
+  const updateSubject=async updates=>{
+    if (!editSubject) return;
+    const {error}=await supabase.from("subjects").update(updates).eq("id",editSubject.id);
+    if (error){notify("❌ "+error.message);return;}
+    // Keep MAPEH components' grade level in sync with their parent.
+    const comps=subjects.filter(s=>s.parent_subject_id===editSubject.id);
+    if (comps.length&&updates.grade_level!==undefined) {
+      await supabase.from("subjects").update({grade_level:updates.grade_level})
+        .in("id",comps.map(c=>c.id));
+    }
+    notify("✅ Subject updated!");
+    setEditSubject(null);
+    fetchAll();
   };
 
   // ── DepEd FORMS (SF2 / SF4) ──
@@ -2799,6 +2943,15 @@ const AdminDashboard = ({ profile, onLogout }) => {
     notify("✅ Section added!"); fetchAll();
   };
 
+  const updateSection=async updates=>{
+    if (!editSection) return;
+    const {error}=await supabase.from("sections").update(updates).eq("id",editSection.id);
+    if (error){notify("❌ "+error.message);return;}
+    notify("✅ Section updated!");
+    setEditSection(null);
+    fetchAll();
+  };
+
   const delSection=async id=>{
     await supabase.from("profiles").update({section_id:null}).eq("section_id",id);
     await supabase.from("sections").delete().eq("id",id);
@@ -2877,6 +3030,19 @@ const AdminDashboard = ({ profile, onLogout }) => {
         <EditStudentModal student={editStudent} sections={sections}
           qualifications={qualifications.map(q=>q.name)} canChangeGrade={true}
           onSave={handleUpdateStudent} onClose={()=>setEditStudent(null)}/>
+      )}
+      {editTeacher&&(
+        <EditTeacherModal teacher={editTeacher}
+          onSave={updateTeacher} onClose={()=>setEditTeacher(null)}/>
+      )}
+      {editSection&&(
+        <EditSectionModal section={editSection}
+          onSave={updateSection} onClose={()=>setEditSection(null)}/>
+      )}
+      {editSubject&&(
+        <EditSubjectModal subject={editSubject}
+          isMapeh={editSubject.name.trim().toUpperCase()==="MAPEH"}
+          onSave={updateSubject} onClose={()=>setEditSubject(null)}/>
       )}
       {editGrade&&(
         <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:200,
@@ -3117,6 +3283,8 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     )}
                   </div>
                   <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
+                      onClick={()=>setEditTeacher(t)}>✏️</Btn>
                     <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
                       onClick={()=>setResetModal({userId:t.id,name:t.name,role:"teacher"})}>🔑</Btn>
                     <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
@@ -3194,8 +3362,12 @@ const AdminDashboard = ({ profile, onLogout }) => {
                             <div style={{fontWeight:700,fontSize:13,color:T.text}}>{sec.name}</div>
                             <div style={{fontSize:11,color:T.textMuted}}>{count} students</div>
                           </div>
-                          <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
-                            onClick={()=>delSection(sec.id)}>🗑️</Btn>
+                          <div style={{display:"flex",gap:4}}>
+                            <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
+                              onClick={()=>setEditSection(sec)}>✏️</Btn>
+                            <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
+                              onClick={()=>delSection(sec.id)}>🗑️</Btn>
+                          </div>
                         </div>
                         {isTveGrade&&(
                           <div style={{marginBottom:8,padding:"6px 8px",background:"#f3e5f5",
@@ -3307,8 +3479,12 @@ const AdminDashboard = ({ profile, onLogout }) => {
                                   color={T.blue}/>}
                               </div>
                             </div>
-                            <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
-                              onClick={()=>delSubject(s.id)}>🗑️</Btn>
+                            <div style={{display:"flex",gap:4}}>
+                              <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
+                                onClick={()=>setEditSubject(s)}>✏️</Btn>
+                              <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
+                                onClick={()=>delSubject(s.id)}>🗑️</Btn>
+                            </div>
                           </div>
                           {!isMapeh&&(
                             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
