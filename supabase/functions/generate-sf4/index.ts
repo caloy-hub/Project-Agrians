@@ -18,6 +18,9 @@ import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "https://esm.s
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  // Lets the frontend read the completeness warning header (see below) —
+  // without this, browsers hide any non-"simple" response header from fetch().
+  "Access-Control-Expose-Headers": "X-Encoding-Warning",
 };
 
 const MM = 2.83465;
@@ -81,7 +84,7 @@ class Drawer {
 type Row = {
   label: string; m0:number; f0:number;
   transferredIn:number; transferredOut:number; droppedOut:number;
-  m1:number; f1:number; ada:number; pct:number;
+  m1:number; f1:number; ada:number; pct:number; excluded:number;
 };
 
 serve(async (req: Request) => {
@@ -116,9 +119,10 @@ serve(async (req: Request) => {
     const grades: number[] = level==="JHS" ? [7,8,9,10] : [11,12];
 
     const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const [{ data: allStudents }, { data: holidays }] = await Promise.all([
+    const [{ data: allStudents }, { data: holidays }, { data: sectionsInScope }] = await Promise.all([
       adminClient.from("profiles").select("*").eq("role","student").in("grade_level",grades),
       adminClient.from("school_holidays").select("date"),
+      adminClient.from("sections").select("id,name,grade_level").in("grade_level",grades),
     ]);
     const days = schoolDaysInMonth(month, year, term, holidays||[]);
     const monthStart = days.length ? days[0] : `${year}-${String(month).padStart(2,"0")}-01`;
@@ -131,6 +135,25 @@ serve(async (req: Request) => {
         .in("student_id", allIds).gte("date", days[0]).lte("date", days[days.length-1]);
       dailyRows = data || [];
     }
+
+    // A section only counts as "encoded" for this month if at least one of its
+    // learners has a daily_attendance row in range — this is how we know its
+    // adviser actually saved an SF2 for this month rather than never opening it.
+    // Un-encoded sections must NOT silently count as 0% attendance: that would
+    // drag the whole grade's ADA/% Attendance down and misrepresent sections
+    // that simply haven't submitted yet, which is exactly the discrepancy this
+    // fixes (SF4 previously always looked "incomplete" for any section whose
+    // adviser hadn't saved attendance that month).
+    const studentSectionId = new Map((allStudents||[]).map(s=>[s.id, s.section_id]));
+    const encodedSectionIds = new Set<string>();
+    dailyRows.forEach(r => {
+      const secId = studentSectionId.get(r.student_id);
+      if (secId) encodedSectionIds.add(secId);
+    });
+    const sectionIdsInScope = new Set((allStudents||[]).map(s=>s.section_id).filter(Boolean));
+    const incompleteSections = (sectionsInScope||[])
+      .filter(sec => sectionIdsInScope.has(sec.id) && !encodedSectionIds.has(sec.id))
+      .map(sec => `Grade ${sec.grade_level} - ${sec.name}`);
 
     const movedInRange = (s:any) => s.status_date && s.status_date >= monthStart && s.status_date <= monthEnd;
 
@@ -149,16 +172,25 @@ serve(async (req: Request) => {
       const endingM = currentlyEnrolled.filter(s=>s.gender==="Male").length;
       const endingF = currentlyEnrolled.filter(s=>s.gender==="Female").length;
 
-      const enrolledIds = new Set(currentlyEnrolled.map(s=>s.id));
+      // Movement/enrolment figures above reflect every enrolled learner, since
+      // enrolment status is independent of attendance encoding. ADA and %
+      // Attendance, though, should only be computed from learners whose
+      // section has actually encoded (saved) attendance this month — otherwise
+      // an un-submitted section's learners silently count as 0% present and
+      // skew the grade average, rather than being excluded and flagged.
+      const attendanceEligible = currentlyEnrolled.filter(
+        s => s.section_id && encodedSectionIds.has(s.section_id));
+      const enrolledIds = new Set(attendanceEligible.map(s=>s.id));
       const present = dailyRows.filter(r=>enrolledIds.has(r.student_id) && r.status==="present").length;
-      const ada = days.length>0 ? Math.round((present/days.length)*10)/10 : 0;
-      const slots = currentlyEnrolled.length*days.length;
+      const ada = days.length>0 && attendanceEligible.length>0 ? Math.round((present/days.length)*10)/10 : 0;
+      const slots = attendanceEligible.length*days.length;
       const pct = slots>0 ? Math.round((present/slots)*1000)/10 : 0;
+      const excluded = currentlyEnrolled.length - attendanceEligible.length;
 
       return {
         label, m0:Math.max(beginningM,0), f0:Math.max(beginningF,0),
         transferredIn: transferredInThisMonth.length, transferredOut: transferredOutThisMonth.length,
-        droppedOut: droppedOutThisMonth.length, m1: endingM, f1: endingF, ada, pct,
+        droppedOut: droppedOutThisMonth.length, m1: endingM, f1: endingF, ada, pct, excluded,
       };
     };
 
@@ -227,7 +259,7 @@ serve(async (req: Request) => {
       d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.5);
       let x = MARGIN;
       const bt = r.m0+r.f0, et = r.m1+r.f1;
-      const vals: (string|number)[] = [r.label, r.m0, r.f0, bt, r.transferredIn, r.transferredOut, r.droppedOut, r.m1, r.f1, et, r.ada, `${r.pct}%`];
+      const vals: (string|number)[] = [r.label, r.m0, r.f0, bt, r.transferredIn, r.transferredOut, r.droppedOut, r.m1, r.f1, et, r.ada, `${r.pct}%${r.excluded>0?"*":""}`];
       cols.forEach((c,i)=>{
         d.line(x, rowY-rowH, x, rowY, 0.35);
         if (i===0) d.text(x+2*MM, rowY-rowH+1.9*MM, String(vals[i]), bold?fBold:fReg, 7.6);
@@ -245,7 +277,29 @@ serve(async (req: Request) => {
     d.text(MARGIN, y, "Legend: Beg. = Enrolment at the beginning of the month · End = Enrolment at the end of the month · ADA = Average Daily Attendance", fReg, 7.5);
     y -= 4*MM;
     d.text(MARGIN, y, "Movement figures are drawn from each learner's recorded Enrollment Status; attendance figures are drawn from the Daily Attendance grid.", fReg, 7.5);
-    y -= 10*MM;
+    y -= 4*MM;
+
+    let warningText = "";
+    if (incompleteSections.length) {
+      warningText = `${incompleteSections.length} section(s) have not yet encoded/saved attendance for `
+        + `${MONTH_NAMES[month]} ${year}: ${incompleteSections.join(", ")}. Their learners are excluded `
+        + `from ADA / % Attendance (marked *) until that section's SF2 is encoded — re-generate this report after.`;
+      // Simple word-wrap so a long section list never runs off the page edge.
+      const maxWidth = contentW;
+      const words = ("* " + warningText).split(" ");
+      let line = "";
+      words.forEach(w => {
+        const trial = line ? line + " " + w : w;
+        if (fBold.widthOfTextAtSize(trial, 7.5) > maxWidth) {
+          d.text(MARGIN, y, line, fBold, 7.5); y -= 3.6*MM;
+          line = w;
+        } else {
+          line = trial;
+        }
+      });
+      if (line) { d.text(MARGIN, y, line, fBold, 7.5); y -= 3.6*MM; }
+    }
+    y -= 6*MM;
 
     d.text(MARGIN, y, "Prepared by:", fReg, 8.5);
     d.line(MARGIN+28*MM, y-0.8, MARGIN+90*MM, y-0.8);
@@ -261,6 +315,9 @@ serve(async (req: Request) => {
       headers: {
         ...corsHeaders, "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="SF4_${level}_${MONTH_NAMES[month]}_${year}.pdf"`,
+        ...(incompleteSections.length ? { "X-Encoding-Warning": encodeURIComponent(
+          `${incompleteSections.length} section(s) not yet encoded and excluded from ADA/% Attendance: ${incompleteSections.join(", ")}`
+        ) } : {}),
       },
     });
   } catch (err) {

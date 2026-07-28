@@ -132,6 +132,21 @@ serve(async (req: Request) => {
         .in("student_id", stuIds).gte("date", days[0].date).lte("date", days[days.length-1].date);
       dailyRows = data || [];
     }
+
+    // If the adviser has never opened + saved the Daily Attendance grid for this
+    // month, dailyRows comes back completely empty. Silently falling back to
+    // "present" for every learner/day in that case (as the on-screen grid does,
+    // for data-entry convenience before a save) would print a misleading 100%
+    // attendance report for a section that was never actually encoded — and is
+    // exactly what made this section's real numbers "disappear" once compiled
+    // into SF4. Refuse instead, so the gap is visible rather than silent.
+    if (days.length>0 && stuIds.length>0 && dailyRows.length===0) {
+      return new Response(JSON.stringify({ error:
+        `Attendance for ${section.name} has not been encoded for ${MONTH_NAMES[month]} ${year} yet. `
+        + `Ask the section adviser to encode and save the Daily Attendance grid first, then generate SF2 again.`
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const statusFor = (studentId:string, date:string) => {
       const row = dailyRows.find(r=>r.student_id===studentId && r.date===date);
       return row ? row.status : "present"; // matches the adviser UI's default-present convention

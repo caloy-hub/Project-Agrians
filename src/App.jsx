@@ -2857,6 +2857,34 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [sf4Level,setSf4Level]=useState("JHS");
   const [sf4Month,setSf4Month]=useState(null);
   const [genBusy,setGenBusy]=useState(false);
+  const [sf4Incomplete,setSf4Incomplete]=useState(null); // null=not checked; [] = all encoded; [names] = gaps
+  const [checkingSf4,setCheckingSf4]=useState(false);
+
+  // Before generating SF4, quietly check which sections in scope haven't
+  // saved a Daily Attendance grid for the selected month yet, so the admin
+  // sees the gap up front instead of just a low/odd-looking percentage in
+  // the PDF afterward (the PDF itself still marks these with a footnote).
+  useEffect(()=>{
+    if (!sf4Month) { setSf4Incomplete(null); return; }
+    const grades = sf4Level==="JHS" ? [7,8,9,10] : [11,12];
+    const days = schoolDaysInMonth(sf4Month, holidays);
+    const scopedSections = sections.filter(s=>grades.includes(s.grade_level));
+    const scopedStudents = students.filter(s=>grades.includes(s.grade_level) && s.section_id);
+    if (!days.length || !scopedStudents.length) { setSf4Incomplete([]); return; }
+    setCheckingSf4(true);
+    (async()=>{
+      const ids=scopedStudents.map(s=>s.id);
+      const {data}=await supabase.from("daily_attendance").select("student_id")
+        .in("student_id",ids).gte("date",days[0].date).lte("date",days[days.length-1].date)
+        .limit(10000);
+      const encodedStudentIds=new Set((data||[]).map(r=>r.student_id));
+      const encodedSectionIds=new Set(
+        scopedStudents.filter(s=>encodedStudentIds.has(s.id)).map(s=>s.section_id));
+      const missing=scopedSections.filter(sec=>!encodedSectionIds.has(sec.id));
+      setSf4Incomplete(missing.map(s=>`Gr.${s.grade_level} - ${s.name}`));
+      setCheckingSf4(false);
+    })();
+  },[sf4Level,sf4Month,sections,students,holidays]);
 
   const downloadPdf=async(fnName,body,filename)=>{
     setGenBusy(true);
@@ -2873,13 +2901,20 @@ const AdminDashboard = ({ profile, onLogout }) => {
         notify("❌ "+(err.error||"Failed to generate "+filename));
         return;
       }
+      const warningHeader=res.headers.get("X-Encoding-Warning");
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url; a.download=filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      notify("✅ Downloaded!");
+      if (warningHeader) {
+        // Longer-lived toast — this needs more than the default 3s to actually read.
+        setToast("⚠️ Downloaded, but "+decodeURIComponent(warningHeader));
+        setTimeout(()=>setToast(""),8000);
+      } else {
+        notify("✅ Downloaded!");
+      }
     } catch (e) {
       notify("❌ "+String(e.message||e));
     } finally {
@@ -3674,13 +3709,28 @@ const AdminDashboard = ({ profile, onLogout }) => {
                   <option value="">-- Select Month --</option>
                   {TERM_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
                 </select>
+                {checkingSf4&&(
+                  <div style={{fontSize:11,color:T.textMuted}}>Checking attendance encoding for this month…</div>
+                )}
+                {!checkingSf4&&sf4Incomplete&&sf4Incomplete.length>0&&(
+                  <div style={{fontSize:11.5,color:"#8a5a00",background:"#fff6db",
+                    border:"1px solid #f0d878",borderRadius:6,padding:"8px 10px",lineHeight:1.5}}>
+                    ⚠️ {sf4Incomplete.length} section(s) haven't saved Daily Attendance for this month yet,
+                    so their learners will be excluded from ADA / % Attendance in the report (marked *):<br/>
+                    <strong>{sf4Incomplete.join(", ")}</strong>
+                  </div>
+                )}
                 <Btn onClick={generateSF4} disabled={genBusy}>📄 Generate SF4 PDF ({sf4Level})</Btn>
               </div>
             </Card>
             <div style={{fontSize:11,color:T.textMuted,padding:"0 4px"}}>
-              SF2 uses the Daily Attendance grid each adviser encodes for their section.
-              SF4 movement figures (transferred in/out, dropped out) come from each learner's
-              Enrollment Status — edit a learner in the Students tab to update it.
+              SF2 uses the Daily Attendance grid each adviser encodes for their section, and
+              will refuse to generate if that section hasn't saved attendance for the selected
+              month yet. SF4 movement figures (transferred in/out, dropped out) come from each
+              learner's Enrollment Status — edit a learner in the Students tab to update it.
+              A section that hasn't saved Daily Attendance for the month is excluded from that
+              row's ADA / % Attendance (marked *) rather than counted as 0% — generate its SF2
+              first, or re-generate SF4 once it's encoded.
             </div>
           </div>
         )}
