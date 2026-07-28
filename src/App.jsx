@@ -672,6 +672,7 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
                 <option>Transferred In</option>
                 <option>Transferred Out</option>
                 <option>Dropped Out</option>
+                <option>Deceased</option>
               </select>
               {form.enrollment_status!=="Active"&&(
                 <input type="date" value={form.status_date}
