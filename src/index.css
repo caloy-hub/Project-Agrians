@@ -346,8 +346,7 @@ pre code {
   text-align: left;
   border: none;
   min-height: 100svh;
-  display: flex;
-  flex-direction: row;
+  display: block;
   background: var(--bg-root);
 }
 
