@@ -229,15 +229,32 @@ serve(async (req: Request) => {
     if (ordered.length===0) { d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.5); d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, "No learners in this section.", fReg, 8); rowY-=rowH; }
 
     d.line(MARGIN, rowY, MARGIN+contentW, rowY, 0.9);
-    y = rowY - 6*MM;
 
-    // ---- Summary box ----
+    // ---- Page 2: monthly summary + signatures ----
+    // The official SF2 is a two-page form: the daily grid on page 1, and the
+    // monthly summary/certification on page 2. Previously both were packed
+    // onto one page, so for sections with enough rows the summary/signature
+    // block ran past the bottom margin — this puts the summary on its own
+    // page every month, regardless of how many rows the grid needed.
+    const page2 = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    const d2 = new Drawer(page2, fReg, fBold);
+    let y2 = PAGE_H - MARGIN;
+
+    d2.centered(PAGE_W/2, y2, "Department of Education", fBold, 11); y2 -= 4.6*MM;
+    d2.centered(PAGE_W/2, y2, `${SCHOOL_INFO.region}  ·  ${SCHOOL_INFO.division}`, fReg, 9); y2 -= 4.4*MM;
+    d2.centered(PAGE_W/2, y2, SCHOOL_INFO.school, fBold, 11); y2 -= 4.6*MM;
+    d2.centered(PAGE_W/2, y2, "SCHOOL FORM 2 (SF2) — SUMMARY FOR THE MONTH", fBold, 12.5); y2 -= 7*MM;
+    d2.text(MARGIN, y2, `Grade & Section: ${section.grade_level} - ${section.name}`, fBold, 9.5);
+    d2.text(MARGIN + 100*MM, y2, `Month: ${MONTH_NAMES[month]} ${year}  (Term ${term})`, fBold, 9.5);
+    d2.text(MARGIN + 195*MM, y2, `Adviser: ${adviser?.name || "—"}`, fBold, 9.5);
+    y2 -= 10*MM;
+
     const enrolled = ordered.length;
     const totalSlots = enrolled*days.length;
     const attPct = totalSlots>0 ? Math.round((totalPresent/totalSlots)*1000)/10 : 0;
     const ada = days.length>0 ? Math.round((totalPresent/days.length)*10)/10 : 0;
 
-    d.text(MARGIN, y, "SUMMARY FOR THE MONTH", fBold, 9.5); y -= 5.5*MM;
+    d2.text(MARGIN, y2, "SUMMARY FOR THE MONTH", fBold, 10); y2 -= 6.5*MM;
     const sumRows: [string,string][] = [
       ["Enrolment (Male / Female / Total)", `${males.length} / ${females.length} / ${enrolled}`],
       ["No. of School Days This Month", String(days.length)],
@@ -247,19 +264,19 @@ serve(async (req: Request) => {
       ["Average Daily Attendance (ADA)", String(ada)],
     ];
     sumRows.forEach(([label,val])=>{
-      d.text(MARGIN+2*MM, y, label, fReg, 8.3);
-      d.text(MARGIN+120*MM, y, val, fBold, 8.3);
-      y -= 5*MM;
+      d2.text(MARGIN+2*MM, y2, label, fReg, 9.5);
+      d2.text(MARGIN+140*MM, y2, val, fBold, 9.5);
+      y2 -= 6.5*MM;
     });
 
-    y -= 3*MM;
-    d.text(MARGIN, y, "Prepared by:", fReg, 8.5);
-    d.line(MARGIN+28*MM, y-0.8, MARGIN+90*MM, y-0.8);
-    d.text(MARGIN+150*MM, y, "Noted by:", fReg, 8.5);
-    d.line(MARGIN+175*MM, y-0.8, MARGIN+contentW, y-0.8);
-    y -= 4.5*MM;
-    d.centered(MARGIN+59*MM, y, adviser?.name?.toUpperCase()||"CLASS ADVISER", fReg, 7.5);
-    d.centered(MARGIN+150*MM+(contentW-175*MM+MARGIN)/2, y, "SCHOOL HEAD", fReg, 7.5);
+    y2 -= 10*MM;
+    d2.text(MARGIN, y2, "Prepared by:", fReg, 8.5);
+    d2.line(MARGIN+28*MM, y2-0.8, MARGIN+90*MM, y2-0.8);
+    d2.text(MARGIN+150*MM, y2, "Noted by:", fReg, 8.5);
+    d2.line(MARGIN+175*MM, y2-0.8, MARGIN+contentW, y2-0.8);
+    y2 -= 4.5*MM;
+    d2.centered(MARGIN+59*MM, y2, adviser?.name?.toUpperCase()||"CLASS ADVISER", fReg, 7.5);
+    d2.centered(MARGIN+150*MM+(contentW-175*MM+MARGIN)/2, y2, "SCHOOL HEAD", fReg, 7.5);
 
     const pdfBytes = await pdfDoc.save();
     return new Response(pdfBytes as BodyInit, {

@@ -23,7 +23,7 @@
 // school year (true for the overwhelming majority of real cases) — so:
 //   cumulative-as-of-end-of-month = count(status = X, status_date <= monthEnd)
 //   for-the-month                 = count(status = X, monthStart <= status_date <= monthEnd)
-//   cumulative-as-of-previous-month = cumulative-end − for-the-month
+//   cumulative-as-of-previous-month = cumulative-end - for-the-month
 // If a learner's status is ever reverted (e.g. "Transferred Out" undone back
 // to "Active"), these cumulative counts won't reflect that reversal — there's
 // no history table backing enrollment_status, only its current value.
@@ -100,11 +100,33 @@ class Drawer {
   }
 }
 
+// Greedy word-wrap: fits `text` into lines no wider than maxWidth at the given
+// font/size. Column headers on this form (e.g. "TRANSFERRED OUT", "(A+B)
+// Cum. End of Month") are too wide for a single 19pt-per-column cell, so
+// without this they overlapped into the neighboring column and became
+// unreadable — this is the fix for that.
+function wrapLines(text:string, font:PDFFont, size:number, maxWidth:number): string[] {
+  const words = text.replace(/\n/g," ").split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  words.forEach(w => {
+    const trial = line ? `${line} ${w}` : w;
+    if (line && font.widthOfTextAtSize(trial, size) > maxWidth) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = trial;
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
 // ---- Column layout: 3 label columns (rowspan across the whole header) + ----
 // ---- 12 "triples" of M/F/T, grouped exactly like the official SF4.      ----
 type Triple = { topLabel:string; subLabel:string|null; dataKey:string };
 const TRIPLES: Triple[] = [
-  { topLabel:"REGISTERED LEARNERS\n(End of the Month)", subLabel:null,                            dataKey:"reg" },
+  { topLabel:"REGISTERED LEARNERS",                      subLabel:"(End of the Month)",             dataKey:"reg" },
   { topLabel:"ATTENDANCE",                               subLabel:"Daily Average",                 dataKey:"ada" },
   { topLabel:"ATTENDANCE",                               subLabel:"% for the Month",                dataKey:"pct" },
   { topLabel:"NLPA",                                     subLabel:"(A) Cum. Prev. Month",           dataKey:"nlpaPrev" },
@@ -122,7 +144,7 @@ const LABEL_COLS = [
   { key:"section", label:"SECTION", width:46 },
   { key:"adviser", label:"NAME OF ADVISER", width:110 },
 ];
-const NUM_COL_W = 17;
+const NUM_COL_W = 19;
 
 type RowData = {
   label: string; section?: string; adviser?: string;
@@ -188,17 +210,31 @@ serve(async (req: Request) => {
     const adviserNameById = new Map((advisers||[]).map(a=>[a.id,a.name]));
 
     const allIds = (allStudents||[]).map(s=>s.id);
-    let dailyRows: {student_id:string; status:string}[] = [];
+    let dailyRows: {student_id:string; status:string; date:string}[] = [];
     if (allIds.length && days.length) {
-      const { data } = await adminClient.from("daily_attendance").select("student_id,status")
+      const { data } = await adminClient.from("daily_attendance").select("student_id,status,date")
         .in("student_id", allIds).gte("date", days[0]).lte("date", days[days.length-1]);
       dailyRows = data || [];
     }
     const studentById = new Map((allStudents||[]).map(s=>[s.id, s]));
+
+    // Same "a day with no saved row defaults to present" convention as
+    // generate-sf2's statusFor (see that file's comment) — a missing row
+    // means the grid hasn't been (re-)saved for that specific day yet, not
+    // that the learner was absent. Previously this only counted EXPLICIT
+    // "present" rows and silently skipped any day without a row at all,
+    // which massively deflated ADA/% for any section that hadn't had its
+    // Daily Attendance grid re-saved for literally every day of the month —
+    // while SF2, using the opposite (present-by-default) convention on the
+    // same underlying data, showed the mirror-image inflated numbers. That
+    // mismatch is what produced the too-low July SF4 figures.
+    const statusByKey = new Map<string, string>();
+    dailyRows.forEach(r => statusByKey.set(`${r.student_id}|${r.date}`, r.status));
     const presentByStudent = new Map<string, number>();
-    dailyRows.forEach(r => {
-      if (r.status !== "present") return;
-      presentByStudent.set(r.student_id, (presentByStudent.get(r.student_id)||0) + 1);
+    allIds.forEach(id => {
+      let count = 0;
+      days.forEach(dt => { if ((statusByKey.get(`${id}|${dt}`) || "present") === "present") count++; });
+      presentByStudent.set(id, count);
     });
     const sectionsWithAttendance = new Set<string>();
     dailyRows.forEach(r => {
@@ -350,36 +386,74 @@ serve(async (req: Request) => {
     y -= 6*MM;
 
     // ---- Header (3 rows: top group / sub-group / M-F-T) ----
-    const headerRowH = [8*MM, 7*MM, 4.5*MM];
+    const groupW = NUM_COL_W*3;
+    const topFontSize = 7.5, subFontSize = 5.8, lineGap = 2.6*MM;
+
+    // Consecutive triples sharing the same topLabel (e.g. the 3 NLPA triples,
+    // or the 3 Transferred Out triples) are really ONE merged header cell on
+    // the real form — draw the category name once across the full span
+    // instead of once per triple, which is both truer to the form and far
+    // more legible (more width per label = bigger font, no redundant repeats).
+    type TopGroup = { label:string; startIdx:number; count:number };
+    const topGroups: TopGroup[] = [];
+    TRIPLES.forEach((t, i) => {
+      const last = topGroups[topGroups.length-1];
+      if (last && last.label===t.topLabel) last.count++;
+      else topGroups.push({ label:t.topLabel, startIdx:i, count:1 });
+    });
+    const topGroupWrapped = topGroups.map(g => wrapLines(g.label, fBold, topFontSize, g.count*groupW-4));
+    const subWrapped = TRIPLES.map(t => t.subLabel ? wrapLines(t.subLabel, fReg, subFontSize, groupW-3) : []);
+    const labelWrapped = LABEL_COLS.map(col => wrapLines(col.label, fBold, 7, col.width-3));
+
+    const maxTopLines = Math.max(1, ...topGroupWrapped.map(l=>l.length));
+    const maxSubLines = Math.max(1, ...subWrapped.map(l=>l.length));
+    const topRowH = maxTopLines*lineGap + 2*MM;
+    const subRowH = maxSubLines*lineGap + 2*MM;
+    const genderRowH = 4.5*MM;
+    const headerRowH = [topRowH, subRowH, genderRowH];
     const topY = y, midY = y-headerRowH[0], botY = midY-headerRowH[1], headerBottomY = botY-headerRowH[2];
 
     let x = MARGIN;
-    LABEL_COLS.forEach(col => {
-      const lines = col.label.split("\n");
-      let ly = topY - 3.5*MM;
-      lines.forEach(line => { d.centered(x+col.width/2, ly, line, fBold, 7); ly -= 3.2*MM; });
+    LABEL_COLS.forEach((col, ci) => {
+      const lines = labelWrapped[ci];
+      const totalH = headerRowH[0]+headerRowH[1]+headerRowH[2];
+      let ly = topY - (totalH - lines.length*lineGap)/2 - lineGap*0.7;
+      lines.forEach(line => { d.centered(x+col.width/2, ly, line, fBold, 7); ly -= lineGap; });
       d.line(x, topY, x, headerBottomY);
       x += col.width;
     });
     d.line(x, topY, x, headerBottomY);
 
-    TRIPLES.forEach(t => {
-      const groupW = NUM_COL_W*3;
-      const lines = t.topLabel.split("\n");
-      if (lines.length===1) {
-        d.centered(x+groupW/2, midY+2.2*MM, lines[0], fBold, 6.8);
-      } else {
-        d.centered(x+groupW/2, topY-3.3*MM, lines[0], fBold, 6.8);
-        d.centered(x+groupW/2, topY-6.3*MM, lines[1], fBold, 6.2);
+    topGroups.forEach((g, gi) => {
+      const span = g.count*groupW;
+      const lines = topGroupWrapped[gi];
+      let ly = topY - (topRowH - lines.length*lineGap)/2 - lineGap*0.7;
+      lines.forEach(line => { d.centered(x+span/2, ly, line, fBold, topFontSize); ly -= lineGap; });
+      x += span;
+    });
+    x = MARGIN + LABEL_COLS.reduce((s,c)=>s+c.width,0);
+
+    TRIPLES.forEach((t, ti) => {
+      const isGroupStart = topGroups.some(g => g.startIdx===ti);
+
+      if (t.subLabel) {
+        const sLines = subWrapped[ti];
+        let sy = midY - (subRowH - sLines.length*lineGap)/2 - lineGap*0.7;
+        sLines.forEach(line => { d.centered(x+groupW/2, sy, line, fReg, subFontSize); sy -= lineGap; });
       }
-      if (t.subLabel) d.centered(x+groupW/2, botY+1.2*MM, t.subLabel, fReg, 6);
       ["M","F","T"].forEach((g,i) => {
         d.centered(x+i*NUM_COL_W+NUM_COL_W/2, headerBottomY+1.3*MM, g, fBold, 6.5);
         d.line(x+i*NUM_COL_W, topY, x+i*NUM_COL_W, headerBottomY);
       });
+      // Thin divider between triples in the same merged group; thick
+      // dividers at true category boundaries are drawn separately below.
       x += groupW;
-      d.line(x, topY, x, headerBottomY);
+      d.line(x, midY, x, headerBottomY, isGroupStart?0.6:0.4);
     });
+    // Thick dividers at true category boundaries (Registered/Attendance/NLPA/…), full header height.
+    let gx = MARGIN + LABEL_COLS.reduce((s,c)=>s+c.width,0);
+    topGroups.forEach(g => { d.line(gx, topY, gx, headerBottomY, 1); gx += g.count*groupW; });
+    d.line(gx, topY, gx, headerBottomY, 1);
     d.line(MARGIN, topY, x, topY);
     d.line(MARGIN, midY, x, midY);
     d.line(MARGIN, botY, x, botY);
@@ -441,7 +515,7 @@ serve(async (req: Request) => {
         + `${MONTH_NAMES[month]} ${year}: ${incompleteSections.join(", ")}. Their ADA / % Attendance are marked N/E `
         + `until that section's SF2 is encoded — re-generate this report after.`;
       const maxWidth = contentW;
-      const words = ("⚠ " + warningText).split(" ");
+      const words = ("NOTE: " + warningText).split(" ");
       let line = "";
       words.forEach(w => {
         const trial = line ? line + " " + w : w;

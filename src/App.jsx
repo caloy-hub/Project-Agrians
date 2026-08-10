@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import agriansLogo from "./agrians-logo.png";
 import mcpbahsLogo from "./mcpbahs-logo.png";
+import "./App.css";
 
 const GRADE_LEVELS = [7, 8, 9, 10, 11, 12];
 
@@ -52,27 +53,37 @@ const schoolDaysInMonth = (tm, holidays=[]) => {
   return out;
 };
 
+// Design tokens — harmonized with src/index.css / src/App.css (teal & slate
+// design system). Kept as plain hex (not var(--...)) on purpose: several call
+// sites append an alpha suffix directly to these strings (e.g. T.green3+"22"),
+// which only works with literal hex colors, not CSS custom properties.
 const T = {
-  bg:"#f0f7ee", bgCard:"#ffffff", bgPanel:"#e8f5e2",
-  green1:"#1b4d1f", green2:"#2d6a30", green3:"#3a8c3f",
-  green4:"#4caf50", greenLight:"#81c784",
-  yellow:"#f5c800", yellowDark:"#e6a800",
-  blue:"#003082", red:"#c62828",
-  white:"#ffffff", gray:"#6a7c6a",
-  border:"#b8dab840", text:"#1b3a1e", textMuted:"#4a7a4e",
+  bg:"#f8fafc", bgCard:"#ffffff", bgPanel:"#f0fdfa",
+  green1:"#0f766e", green2:"#0d9488", green3:"#14b8a6",
+  green4:"#2dd4bf", greenLight:"#5eead4",
+  yellow:"#f59e0b", yellowDark:"#d97706",
+  blue:"#2563eb", red:"#ef4444",
+  white:"#ffffff", gray:"#94a3b8",
+  border:"#cbd5e150", text:"#0f172a", textMuted:"#475569",
 };
 
 const css = `
-  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',sans-serif;}
-  body{background:#f0f7ee;color:#1b3a1e;}
-  ::-webkit-scrollbar{width:4px;}
-  ::-webkit-scrollbar-thumb{background:#3a8c3f;border-radius:4px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:var(--font-sans);background:var(--bg-root);color:var(--text-secondary);}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:999px;}
   input,select,textarea{
-    background:#e8f5e2;color:#1b3a1e;border:1px solid #b8dab8;
-    border-radius:8px;padding:10px 14px;width:100%;outline:none;font-size:14px;
+    font-family:var(--font-sans);
+    background:var(--bg-surface);color:var(--text-primary);border:1.5px solid var(--border-default);
+    border-radius:var(--radius-md);padding:10px 14px;width:100%;outline:none;font-size:14px;
+    transition:border-color .15s ease,box-shadow .15s ease;
   }
-  input:focus,select:focus,textarea:focus{border-color:#4caf50;box-shadow:0 0 0 2px #4caf5020;}
-  button{cursor:pointer;border:none;border-radius:8px;font-weight:600;transition:all .2s;}
+  input:hover,select:hover,textarea:hover{border-color:var(--border-strong);}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+  input::placeholder,textarea::placeholder{color:var(--text-muted);}
+  button{cursor:pointer;border:none;border-radius:var(--radius-md);font-weight:600;
+    font-family:var(--font-sans);transition:all .2s var(--ease-in-out);}
   @keyframes spin{to{transform:rotate(360deg)}}
 `;
 
@@ -161,7 +172,7 @@ const EncodingProgressCard = ({ result }) => {
           {percent===null?"—":`${percent}%`}
         </div>
       </div>
-      <div style={{height:8,borderRadius:6,background:"#e0f0e0",overflow:"hidden",marginBottom:8}}>
+      <div style={{height:8,borderRadius:6,background:"#e2f5f2",overflow:"hidden",marginBottom:8}}>
         <div style={{height:"100%",width:`${percent||0}%`,background:encodingColor(percent),transition:"width .3s"}}/>
       </div>
       {doneSubjects.length===0&&pendingSubjects.length===0
@@ -170,7 +181,7 @@ const EncodingProgressCard = ({ result }) => {
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {doneSubjects.map(s=>(
               <span key={s.subject.id} style={{fontSize:10,fontWeight:700,color:"#2e7d32",
-                background:"#e8f5e9",border:"1px solid #c8e6c9",borderRadius:10,padding:"2px 8px"}}>
+                background:"#f0fdfa",border:"1px solid #ccfbf1",borderRadius:10,padding:"2px 8px"}}>
                 ✅ {s.subject.name}
               </span>
             ))}
@@ -208,32 +219,33 @@ const edgeCall = async (fn, body) => {
 };
 
 const Card = ({ children, style={} }) => (
-  <div style={{background:T.bgCard,borderRadius:12,padding:16,
-    border:"1px solid #c8e6c9",boxShadow:"0 2px 8px #00000010",...style}}>
+  <div className="card animate-fade-in-scale" style={{background:T.bgCard,borderRadius:"var(--radius-lg)",padding:16,
+    border:"1px solid var(--border-subtle)",boxShadow:"var(--shadow-sm)",...style}}>
     {children}
   </div>
 );
 const Btn = ({ children, onClick, color=T.green3, style={}, disabled=false }) => (
-  <button onClick={onClick} disabled={disabled} style={{
-    background:disabled?"#ccc":color,color:color===T.yellow?"#1b3a1e":T.white,
-    padding:"10px 16px",fontSize:13,boxShadow:disabled?"none":"0 2px 6px #00000020",
+  <button className="btn" onClick={onClick} disabled={disabled} style={{
+    background:disabled?"#cbd5e1":color,color:color===T.yellow?T.text:T.white,
+    padding:"10px 16px",fontSize:13,borderRadius:"var(--radius-md)",
+    boxShadow:disabled?"none":"var(--shadow-sm)",
     ...style,opacity:disabled?.6:1}}>{children}</button>
 );
 const Badge = ({ text, color }) => (
-  <span style={{background:color+"22",color,border:`1px solid ${color}55`,
-    borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700}}>{text}</span>
+  <span className="badge" style={{background:color+"1a",color,border:`1px solid ${color}55`,
+    borderRadius:"var(--radius-full)",padding:"2px 10px",fontSize:11,fontWeight:700}}>{text}</span>
 );
 const Toast = ({ msg }) => msg?(
-  <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",
+  <div className="animate-slide-in-up" style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",
     background:msg.startsWith("✅")?T.green2:msg.startsWith("🗑️")?"#5d4037":
-    msg.startsWith("⏳")?T.blue:"#b71c1c",
-    color:"#fff",padding:"10px 20px",borderRadius:20,fontSize:13,fontWeight:700,
-    zIndex:999,boxShadow:"0 4px 20px #0008",whiteSpace:"nowrap"}}>{msg}</div>
+    msg.startsWith("⏳")?T.blue:"#dc2626",
+    color:"#fff",padding:"10px 20px",borderRadius:"var(--radius-full)",fontSize:13,fontWeight:700,
+    zIndex:999,boxShadow:"var(--shadow-xl)",whiteSpace:"nowrap"}}>{msg}</div>
 ):null;
 const Spinner = () => (
   <div style={{display:"flex",alignItems:"center",justifyContent:"center",
     height:"100vh",background:T.bg,flexDirection:"column",gap:16}}>
-    <div style={{width:48,height:48,border:"4px solid #c8e6c9",
+    <div style={{width:48,height:48,border:"4px solid var(--border-subtle)",
       borderTop:`4px solid ${T.green3}`,borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
     <div style={{color:T.textMuted,fontSize:14,fontWeight:600}}>Loading...</div>
   </div>
@@ -241,8 +253,8 @@ const Spinner = () => (
 
 const SchoolHeader = ({ small=false }) => (
   <div style={{padding:small?"10px 12px":"20px 16px",
-    background:"linear-gradient(160deg,#0d2e10 0%,#1b4d1f 30%,#2d6a30 65%,#3a6b20 100%)",
-    borderBottom:`4px solid ${T.yellow}`,boxShadow:"0 4px 12px #0005",
+    background:"linear-gradient(160deg,#042f2e 0%,#0f766e 30%,#0d9488 65%,#134e4a 100%)",
+    borderBottom:`4px solid ${T.yellow}`,boxShadow:"var(--shadow-lg)",
     position:"relative",overflow:"hidden"}}>
     <div style={{position:"absolute",inset:0,opacity:0.04,
       backgroundImage:"radial-gradient(circle,#ffffff 1px,transparent 1px)",
@@ -253,13 +265,13 @@ const SchoolHeader = ({ small=false }) => (
       gap:12,position:"relative",zIndex:1,marginTop:small?2:6}}>
       <div style={{width:small?44:64,height:small?44:64,borderRadius:"50%",
         border:`3px solid ${T.yellow}`,boxShadow:"0 2px 12px #0006",flexShrink:0,
-        overflow:"hidden",background:"linear-gradient(160deg,#1b4d1f,#2d6a30)",
+        overflow:"hidden",background:"linear-gradient(160deg,#0f766e,#0d9488)",
         display:"flex",alignItems:"center",justifyContent:"center"}}>
         <img src={mcpbahsLogo} alt="MCPBAHS Logo"
           style={{width:"100%",height:"100%",objectFit:"cover"}}/>
       </div>
       <div style={{textAlign:"left"}}>
-        <div style={{fontSize:small?9:11,color:"#a5d6a7",fontWeight:600,letterSpacing:.5,lineHeight:1.5}}>
+        <div style={{fontSize:small?9:11,color:"#99f6e4",fontWeight:600,letterSpacing:.5,lineHeight:1.5}}>
           Department of Education · Region XI · Division of Davao City
         </div>
         <div style={{fontSize:small?13:17,fontWeight:900,color:"#ffffff",lineHeight:1.2,textShadow:"0 1px 4px #0006"}}>
@@ -268,7 +280,7 @@ const SchoolHeader = ({ small=false }) => (
         <div style={{fontSize:small?13:17,fontWeight:900,color:T.yellow,lineHeight:1.2,textShadow:"0 1px 4px #0006"}}>
           Agricultural High School
         </div>
-        <div style={{fontSize:small?9:11,color:"#a5d6a7",marginTop:3,display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{fontSize:small?9:11,color:"#99f6e4",marginTop:3,display:"flex",gap:8,alignItems:"center"}}>
           <span>School ID: 304342</span>
           <span style={{color:T.yellow}}>·</span>
           <span>S.Y. 2026–2027</span>
@@ -276,7 +288,7 @@ const SchoolHeader = ({ small=false }) => (
       </div>
     </div>
     <div style={{position:"absolute",bottom:0,left:0,right:0,height:small?3:5,
-      background:"linear-gradient(90deg,#2d6a30,#4caf50,#f5c800,#4caf50,#2d6a30)",opacity:0.7}}/>
+      background:"linear-gradient(90deg,#0f766e,#2dd4bf,#f5c800,#2dd4bf,#0f766e)",opacity:0.7}}/>
   </div>
 );
 
@@ -316,7 +328,7 @@ const AgriansBranding = () => (
 const TopBar = ({ name, sub, onLogout }) => (
   <div style={{background:T.bgCard,padding:"10px 16px",display:"flex",
     justifyContent:"space-between",alignItems:"center",
-    borderBottom:"2px solid #c8e6c9",boxShadow:"0 2px 6px #00000010"}}>
+    borderBottom:"1px solid var(--border-subtle)",boxShadow:"var(--shadow-sm)"}}>
     <div>
       <div style={{fontWeight:700,fontSize:14,color:T.green1}}>{name}</div>
       <div style={{fontSize:11,color:T.textMuted}}>{sub}</div>
@@ -327,14 +339,17 @@ const TopBar = ({ name, sub, onLogout }) => (
 
 const BottomNav = ({ tabs, active, setActive }) => (
   <div style={{position:"fixed",bottom:0,left:0,right:0,background:T.bgCard,
-    borderTop:"2px solid #c8e6c9",display:"flex",zIndex:100,boxShadow:"0 -2px 8px #00000015"}}>
+    borderTop:"1px solid var(--border-subtle)",display:"flex",zIndex:100,boxShadow:"0 -4px 16px rgba(15,23,42,0.06)",
+    backdropFilter:"blur(12px)"}}>
     {tabs.map(([ic,lb,tb])=>(
-      <button key={tb} onClick={()=>setActive(tb)} style={{
+      <button key={tb} className="btn-ghost" onClick={()=>setActive(tb)} style={{
         flex:1,padding:"10px 2px",background:"transparent",border:"none",cursor:"pointer",
-        color:active===tb?T.green2:T.gray,display:"flex",flexDirection:"column",
+        borderRadius:0,color:active===tb?T.green2:T.gray,display:"flex",flexDirection:"column",
         alignItems:"center",fontSize:9,fontWeight:active===tb?700:400,gap:2,
+        transition:"color .2s var(--ease-in-out), border-color .2s var(--ease-in-out)",
         borderTop:active===tb?`2px solid ${T.green3}`:"2px solid transparent"}}>
-        <span style={{fontSize:18}}>{ic}</span>{lb}
+        <span style={{fontSize:18,transition:"transform .2s var(--ease-out-back)",
+          transform:active===tb?"scale(1.1)":"scale(1)"}}>{ic}</span>{lb}
       </button>
     ))}
   </div>
@@ -661,7 +676,7 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
           <input placeholder="Address" value={form.address}
             onChange={e=>setForm(p=>({...p,address:e.target.value}))}/>
 
-          <div style={{borderTop:"1px solid #e0f0e0",paddingTop:8,marginTop:2}}>
+          <div style={{borderTop:"1px solid #e2f5f2",paddingTop:8,marginTop:2}}>
             <label style={{fontSize:11,color:T.textMuted,display:"block",marginBottom:4}}>
               Enrollment Status — used in School Form 4
             </label>
@@ -814,7 +829,7 @@ const SectionGroup = ({ sectionName, adviserName, total, males, females, qualSta
   return (
     <div style={{marginBottom:12}}>
       <div onClick={()=>setOpen(p=>!p)} style={{cursor:"pointer",fontSize:12,fontWeight:700,
-        color:T.green2,background:"#e8f5e9",padding:"6px 10px",borderRadius:6,
+        color:T.green2,background:"#f0fdfa",padding:"6px 10px",borderRadius:6,
         borderLeft:`3px solid ${T.green3}`,marginBottom:6,display:"flex",
         justifyContent:"space-between",alignItems:"center",gap:8}}>
         <span style={{display:"flex",alignItems:"center",gap:6}}>
@@ -825,7 +840,7 @@ const SectionGroup = ({ sectionName, adviserName, total, males, females, qualSta
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:open?8:0,paddingLeft:2}}>
         <span style={{fontSize:10,fontWeight:700,color:T.text,background:"#fff",
-          border:"1px solid #c8e6c9",borderRadius:10,padding:"2px 8px"}}>
+          border:"1px solid #ccfbf1",borderRadius:10,padding:"2px 8px"}}>
           👥 Total: {total}
         </span>
         <span style={{fontSize:10,fontWeight:700,color:T.blue,background:"#fff",
@@ -926,7 +941,7 @@ const StudentListGrouped = ({ students, sections, teachers, showActions, onDelet
                 {qualGroups?(
                   qualGroups.map(g=>(
                     <div key={g.name} style={{marginBottom:10,marginLeft:4,paddingLeft:8,
-                      borderLeft:"2px solid #d4e8d4"}}>
+                      borderLeft:"2px solid #99f6e4"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"#7b1fa2",background:"#f3e5f5",
                         padding:"3px 9px",borderRadius:6,marginBottom:6,display:"inline-block"}}>
                         🎯 {g.name} ({g.list.length})
@@ -988,7 +1003,7 @@ const StudentCard = ({ student:s, sections, showActions, onDelete, onReset, onRe
         )}
       </div>
       {expand&&(
-        <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #e0f0e0"}}>
+        <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #e2f5f2"}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11}}>
             {[["Birthday",s.birthday||"—"],["Address",s.address||"—"],["Email",s.email||"—"]].map(([k,v])=>(
               <div key={k}><span style={{color:T.textMuted}}>{k}: </span>
@@ -1161,7 +1176,7 @@ const Login = () => {
 
   return (
     <div style={{minHeight:"100vh",
-      background:"linear-gradient(160deg,#e8f5e2 0%,#f0f7ee 50%,#e1f0e1 100%)",
+      background:"linear-gradient(160deg,#f0fdfa 0%,#f8fafc 50%,#ccfbf1 100%)",
       display:"flex",flexDirection:"column"}}>
       <SchoolHeader/>
       <div style={{flex:1,display:"flex",flexDirection:"column",
@@ -1313,7 +1328,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
       <TopBar name={profile.name}
         sub={`Grade ${profile.grade_level}${section?" – "+section.name:""} · LRN: ${profile.lrn}`}
         onLogout={onLogout}/>
-      <div style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
 
         {tab==="profile"&&(
           <div>
@@ -1379,8 +1394,8 @@ const StudentDashboard = ({ profile, onLogout }) => {
                     const teacher=teachers.find(t=>t.id===s.teacher_id);
                     const comps=mapehComponentsOf(s,subjects);
                     const rows=[(
-                      <tr key={s.id} style={{background:i%2===0?T.bgCard:"#f1f8f1",
-                        borderBottom:comps.length?"none":"1px solid #e0f0e0"}}>
+                      <tr key={s.id} style={{background:i%2===0?T.bgCard:"#f8fafc",
+                        borderBottom:comps.length?"none":"1px solid #e2f5f2"}}>
                         <td style={{padding:"8px"}}>
                           <div style={{fontWeight:600,color:T.text}}>
                             {s.name}
@@ -1407,8 +1422,8 @@ const StudentDashboard = ({ profile, onLogout }) => {
                       const cFin=getFinal(c.id);
                       const cTeacher=teachers.find(t=>t.id===c.teacher_id);
                       rows.push(
-                        <tr key={c.id} style={{background:i%2===0?T.bgCard:"#f1f8f1",
-                          borderBottom:"1px solid #e0f0e0"}}>
+                        <tr key={c.id} style={{background:i%2===0?T.bgCard:"#f8fafc",
+                          borderBottom:"1px solid #e2f5f2"}}>
                           <td style={{padding:"4px 8px 8px 24px"}}>
                             <div style={{fontSize:12,fontStyle:"italic",color:T.textMuted}}>{c.name}</div>
                             <div style={{fontSize:10,color:T.textMuted}}>{cTeacher?.name||"Unassigned"}</div>
@@ -1470,8 +1485,8 @@ const StudentDashboard = ({ profile, onLogout }) => {
                     const sd=cal?.school_days||0,dp=att?.days_present||0,ab=sd-dp;
                     const pct=sd>0?Math.round((dp/sd)*100):0;
                     return (
-                      <tr key={i} style={{background:i%2===0?T.bgCard:"#f1f8f1",
-                        borderBottom:"1px solid #e0f0e0"}}>
+                      <tr key={i} style={{background:i%2===0?T.bgCard:"#f8fafc",
+                        borderBottom:"1px solid #e2f5f2"}}>
                         <td style={{padding:"6px 8px"}}>
                           <div style={{fontWeight:600,color:T.text}}>{m.label}</div>
                           <div style={{fontSize:9,color:T.textMuted}}>Term {m.term}</div>
@@ -1526,7 +1541,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
                 onChange={e=>setApptForm(p=>({...p,reason:e.target.value}))}
                 placeholder="e.g. Discuss academic performance..."/>
               {apptMsg&&<div style={{fontSize:12,marginBottom:10,padding:"8px 12px",borderRadius:6,
-                background:apptMsg.startsWith("✅")?"#e8f5e9":"#ffebee",
+                background:apptMsg.startsWith("✅")?"#f0fdfa":"#ffebee",
                 color:apptMsg.startsWith("✅")?T.green2:T.red}}>{apptMsg}</div>}
               <Btn onClick={submitAppt} style={{width:"100%"}}>📩 Submit Request</Btn>
             </Card>
@@ -2022,7 +2037,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           qualifications={qualifications} canChangeGrade={false}
           onSave={handleUpdateStudent} onClose={()=>setEditStudent(null)}/>
       )}
-      <div style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
 
         {tab==="encode"&&(
           <div>
@@ -2059,7 +2074,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   const secName=sections.find(sc=>sc.id===sub.section_id)?.name||"?";
                   return (
                     <div style={{fontSize:12,color:T.green2,fontWeight:600,
-                      background:"#e8f5e9",borderRadius:6,padding:"6px 10px"}}>
+                      background:"#f0fdfa",borderRadius:6,padding:"6px 10px"}}>
                       📍 Section: {secName} (this subject is assigned to this section only)
                     </div>
                   );
@@ -2103,7 +2118,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     </div>
                   :students.map(s=>(
                     <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,
-                      padding:"8px 0",borderBottom:"1px solid #e0f0e0"}}>
+                      padding:"8px 0",borderBottom:"1px solid #e2f5f2"}}>
                       <div style={{flex:1}}>
                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn}</div>
@@ -2309,7 +2324,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                             {classStudents.map(s=>(
                               <tr key={s.id}>
                                 <td style={{position:"sticky",left:0,background:T.bgCard,zIndex:1,
-                                  padding:"4px 8px",borderBottom:"1px solid #e0f0e0",fontWeight:600,color:T.text}}>
+                                  padding:"4px 8px",borderBottom:"1px solid #e2f5f2",fontWeight:600,color:T.text}}>
                                   {s.name}
                                 </td>
                                 {days.map(d=>{
@@ -2317,14 +2332,14 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                                   const present=status==="present";
                                   return (
                                     <td key={d.date} style={{padding:2,textAlign:"center",
-                                      borderBottom:"1px solid #e0f0e0"}}>
+                                      borderBottom:"1px solid #e2f5f2"}}>
                                       <div onClick={()=>toggleDaily(s.id,d.date)}
                                         style={{width:20,height:20,borderRadius:4,margin:"0 auto",
                                           cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
                                           fontWeight:800,fontSize:11,
-                                          background:present?"#e8f5e9":"#ffebee",
+                                          background:present?"#f0fdfa":"#ffebee",
                                           color:present?T.green3:T.red,
-                                          border:`1px solid ${present?"#c8e6c9":"#f0c0c0"}`}}>
+                                          border:`1px solid ${present?"#ccfbf1":"#f0c0c0"}`}}>
                                         {present?"✓":"✗"}
                                       </div>
                                     </td>
@@ -2392,7 +2407,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     onChange={e=>setAdvApptForm(p=>({...p,reason:e.target.value}))}/>
                 </div>
                 {advApptMsg&&<div style={{fontSize:12,marginBottom:10,padding:"8px 12px",borderRadius:6,
-                  background:advApptMsg.startsWith("✅")?"#e8f5e9":"#ffebee",
+                  background:advApptMsg.startsWith("✅")?"#f0fdfa":"#ffebee",
                   color:advApptMsg.startsWith("✅")?T.green2:T.red}}>{advApptMsg}</div>}
                 <Btn onClick={submitAdvAppt} style={{width:"100%"}}>📩 Schedule Conference</Btn>
               </Card>
@@ -3099,7 +3114,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
         </div>
       )}
 
-      <div style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
 
         {tab==="overview"&&(
           <div>
@@ -3327,7 +3342,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
                       onClick={()=>delTeacher(t.id)}>🗑️</Btn>
                   </div>
                 </div>
-                <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #e0f0e0"}}>
+                <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #e2f5f2"}}>
                   <div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>Curriculum Head:</div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     {GRADE_LEVELS.map(gl=>(
@@ -3557,7 +3572,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
                         </Card>
                         {comps.length>0&&(
                           <div style={{marginLeft:16,marginBottom:8,paddingLeft:10,
-                            borderLeft:"2px solid #c8e6c9"}}>
+                            borderLeft:"2px solid #ccfbf1"}}>
                             {comps.map(c=>(
                               <Card key={c.id} style={{marginBottom:6,padding:"8px 10px"}}>
                                 <div style={{display:"flex",justifyContent:"space-between",
@@ -3696,7 +3711,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
                   {["JHS","SHS"].map(lv=>(
                     <button key={lv} onClick={()=>setSf4Level(lv)}
                       style={{flex:1,padding:"10px 0",borderRadius:8,fontSize:13,fontWeight:700,
-                        background:sf4Level===lv?T.green3:"#e8f5e2",color:sf4Level===lv?T.white:T.textMuted}}>
+                        background:sf4Level===lv?T.green3:"#f0fdfa",color:sf4Level===lv?T.white:T.textMuted}}>
                       {lv==="JHS"?"Junior High (7–10)":"Senior High (11–12)"}
                     </button>
                   ))}
