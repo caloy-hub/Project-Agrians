@@ -218,8 +218,8 @@ const edgeCall = async (fn, body) => {
   }
 };
 
-const Card = ({ children, style={} }) => (
-  <div className="card animate-fade-in-scale" style={{background:T.bgCard,borderRadius:"var(--radius-lg)",padding:16,
+const Card = ({ children, style={}, className="" }) => (
+  <div className={`card animate-fade-in-scale ${className}`.trim()} style={{background:T.bgCard,borderRadius:"var(--radius-lg)",padding:16,
     border:"1px solid var(--border-subtle)",boxShadow:"var(--shadow-sm)",...style}}>
     {children}
   </div>
@@ -293,9 +293,8 @@ const SchoolHeader = ({ small=false }) => (
 );
 
 const AgriansBranding = () => (
-  <div style={{display:"flex",flexDirection:"column",alignItems:"center",
-    justifyContent:"center",textAlign:"center",padding:"20px 20px 0px 20px",
-    width:"100%",maxWidth:400}}>
+  <div className="dialog-sm" style={{display:"flex",flexDirection:"column",alignItems:"center",
+    justifyContent:"center",textAlign:"center",padding:"20px 20px 0px 20px"}}>
     <div style={{width:110,height:110,borderRadius:"50%",overflow:"hidden",marginBottom:12,
       boxShadow:"0 4px 20px #00000025",border:`3px solid ${T.yellow}`,
       display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -364,7 +363,7 @@ const ResetPasswordModal = ({ user, onConfirm, onClose }) => {
   return (
     <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:300,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <Card style={{width:"100%",maxWidth:360}}>
+      <Card className="dialog-sm">
         <div style={{fontSize:16,fontWeight:800,color:T.green1,marginBottom:4}}>🔑 Reset Password</div>
         <div style={{fontSize:12,color:T.textMuted,marginBottom:16}}>
           For: <strong style={{color:T.green1}}>{user.name}</strong>&nbsp;
@@ -627,7 +626,7 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
   return (
     <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <Card style={{width:"100%",maxWidth:400,maxHeight:"90vh",overflowY:"auto"}}>
+      <Card className="dialog-md" style={{maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Learner</div>
         <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
           Correct any encoding errors below, then save.
@@ -721,7 +720,7 @@ const EditTeacherModal = ({ teacher, onSave, onClose }) => {
   return (
     <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+      <Card className="dialog-sm" style={{maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Teacher</div>
         <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
           {teacher.email} — email and password are changed separately (🔑 reset password).
@@ -757,7 +756,7 @@ const EditSectionModal = ({ section, onSave, onClose }) => {
   return (
     <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+      <Card className="dialog-sm" style={{maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Section</div>
         <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
           Changing the grade level moves this section (and its students) to that grade.
@@ -797,7 +796,7 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose }) => {
   return (
     <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:250,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <Card style={{width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
+      <Card className="dialog-sm" style={{maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>✏️ Edit Subject</div>
         {isMapeh&&(
           <div style={{fontSize:11,color:T.textMuted,marginBottom:12}}>
@@ -1182,7 +1181,7 @@ const Login = () => {
       <div style={{flex:1,display:"flex",flexDirection:"column",
         alignItems:"center",justifyContent:"center",padding:"20px 20px 40px 20px"}}>
         <AgriansBranding/>
-        <Card style={{width:"100%",maxWidth:400,boxShadow:"0 8px 32px #00000015",marginTop:16}}>
+        <Card className="dialog-sm" style={{boxShadow:"0 8px 32px #00000015",marginTop:16}}>
           <div style={{textAlign:"center",marginBottom:20}}>
             <div style={{fontSize:22,fontWeight:800,color:T.green1}}>Welcome</div>
             <div style={{fontSize:12,color:T.textMuted}}>School Year 2026–2027</div>
@@ -3098,7 +3097,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       {editGrade&&(
         <div style={{position:"fixed",inset:0,background:"#00000066",zIndex:200,
           display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <Card style={{width:"100%",maxWidth:360}}>
+          <Card className="dialog-sm">
             <div style={{fontSize:14,fontWeight:700,color:T.green1,marginBottom:12}}>✏️ Edit Grade</div>
             <div style={{fontSize:12,color:T.textMuted,marginBottom:8}}>
               {students.find(s=>s.id===editGrade.student_id)?.name} ·{" "}

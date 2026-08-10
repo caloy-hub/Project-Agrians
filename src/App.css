@@ -1158,6 +1158,36 @@ tbody tr:last-child td {
   }
 }
 
+/* ── Responsive dialog / login card widths ──────────────────
+   Mobile keeps the original compact width (unchanged).
+   Desktop widens these so they feel consistent with the
+   full-width dashboard panels behind them instead of looking
+   like a small floating box on a large monitor. ────────────*/
+.dialog-sm {
+  width: 100%;
+  max-width: 400px;
+}
+.dialog-md {
+  width: 100%;
+  max-width: 420px;
+}
+@media (min-width: 900px) {
+  .dialog-sm {
+    max-width: 560px;
+  }
+  .dialog-md {
+    max-width: 640px;
+  }
+}
+@media (min-width: 1440px) {
+  .dialog-sm {
+    max-width: 640px;
+  }
+  .dialog-md {
+    max-width: 760px;
+  }
+}
+
 @media (max-width: 768px) {
   .grid-3,
   .grid-4 {
