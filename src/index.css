@@ -5,9 +5,9 @@
 
 /* ── CSS Custom Properties ───────────────────────────────── */
 :root {
-  /* Color Palette — Teal & Slate */
-  --hue-primary: 174;
-  --hue-accent: 265;
+  /* Color Palette — Green & Slate */
+  --hue-primary: 152;
+  --hue-accent: 152;
 
   /* Light Mode */
   --bg-root: #f8fafc;
@@ -22,12 +22,12 @@
   --text-muted: #94a3b8;
   --text-inverse: #f8fafc;
 
-  --accent: #0d9488;
-  --accent-light: #14b8a6;
-  --accent-dark: #0f766e;
-  --accent-glow: rgba(13, 148, 136, 0.25);
-  --accent-bg: rgba(13, 148, 136, 0.08);
-  --accent-border: rgba(13, 148, 136, 0.35);
+  --accent: #2F6B4C;
+  --accent-light: #3E8A63;
+  --accent-dark: #1F4638;
+  --accent-glow: rgba(47, 107, 76, 0.25);
+  --accent-bg: rgba(47, 107, 76, 0.08);
+  --accent-border: rgba(47, 107, 76, 0.35);
 
   --border-subtle: rgba(148, 163, 184, 0.2);
   --border-default: rgba(148, 163, 184, 0.35);
@@ -106,12 +106,12 @@
     --text-muted: #64748b;
     --text-inverse: #0f172a;
 
-    --accent: #2dd4bf;
-    --accent-light: #5eead4;
-    --accent-dark: #14b8a6;
-    --accent-glow: rgba(45, 212, 191, 0.25);
-    --accent-bg: rgba(45, 212, 191, 0.1);
-    --accent-border: rgba(45, 212, 191, 0.4);
+    --accent: #5CA37D;
+    --accent-light: #8FC49A;
+    --accent-dark: #3E8A63;
+    --accent-glow: rgba(92, 163, 125, 0.25);
+    --accent-bg: rgba(92, 163, 125, 0.1);
+    --accent-border: rgba(92, 163, 125, 0.4);
 
     --border-subtle: rgba(255, 255, 255, 0.06);
     --border-default: rgba(255, 255, 255, 0.1);
