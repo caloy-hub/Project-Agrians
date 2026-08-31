@@ -63,3 +63,24 @@ For a future v2.2, consider:
 - PWA install experience retained
 - Capacitor-ready Android packaging retained
 - SF2, SF4 and SF9 generation logic intentionally preserved
+
+## v2.4 Subject & Teaching Assignment Update
+
+This release adds a normalized `subject_assignments` table so one subject can be assigned to multiple teachers and/or sections without creating duplicate subject records.
+
+### Database migration
+Apply:
+`supabase/migrations/20260831_subject_assignments.sql`
+
+The migration backfills existing `subjects.teacher_id` + `subjects.section_id` assignments, so current teaching assignments are retained.
+
+### New admin workflow
+- Grade-level Assignment Matrix
+- Teacher + section assignment cells
+- Multiple teachers per subject
+- Grade-wide assignments
+- Bulk assignment to multiple sections
+- Teacher load summary
+- Search/filter by grade, teacher, and subject
+
+SF2, SF4, and SF9 generation code is not changed by this feature.

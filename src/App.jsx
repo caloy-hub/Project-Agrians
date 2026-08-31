@@ -1709,6 +1709,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
 const TeacherDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("encode");
   const [subjects,setSubjects]=useState([]);
+  const [subjectAssignments,setSubjectAssignments]=useState([]);
   const [students,setStudents]=useState([]);
   const [mySection,setMySection]=useState(null);
   const [classStudents,setClassStudents]=useState([]);
@@ -1742,14 +1743,26 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
-    const [sR,aR,secR,qR,holR]=await Promise.all([
+    const [sR,asR,aR,secR,qR,holR]=await Promise.all([
       supabase.from("subjects").select("*").eq("teacher_id",profile.id),
+      supabase.from("subject_assignments").select("*, subject:subjects(*)").eq("teacher_id",profile.id),
       supabase.from("appointments").select("*").eq("teacher_id",profile.id),
       supabase.from("sections").select("*").eq("adviser_id",profile.id).single(),
       supabase.from("tve_qualifications").select("*").order("name"),
       supabase.from("school_holidays").select("*").order("date"),
     ]);
-    if (sR.data) setSubjects(sR.data);
+    if (asR.data) setSubjectAssignments(asR.data);
+    // Assignment rows are now the source of truth. Keep the legacy subjects.teacher_id
+    // fallback so an existing deployment remains usable while the migration is applied.
+    if (asR.data?.length) {
+      const unique = new Map();
+      asR.data.forEach(a=>{
+        const sub=a.subject;
+        if (sub) unique.set(sub.id, sub);
+      });
+      (sR.data||[]).forEach(sub=>{ if (!unique.has(sub.id)) unique.set(sub.id, sub); });
+      setSubjects(Array.from(unique.values()));
+    } else if (sR.data) setSubjects(sR.data);
     if (aR.data) setAppointments(aR.data);
     if (qR.data) setQualifications(qR.data.map(q=>q.name));
     if (holR.data) setHolidays(holR.data);
@@ -2186,13 +2199,18 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     onChange={e=>{
                       const sub=subjects.find(s=>s.id===e.target.value);
                       setSelSubject(e.target.value);
-                      setSelSection(sub?.section_id||"");
+                      const assigned=subjectAssignments.filter(a=>a.subject_id===e.target.value);
+                      const scoped=assigned.map(a=>a.section_id).filter(Boolean);
+                      setSelSection(scoped.length===1?scoped[0]:(!scoped.length ? (sub?.section_id||"") : ""));
                     }}>
                     <option value="">-- Select --</option>
-                    {subjects.filter(s=>!isMapehParent(s,subjects)).map(s=><option key={s.id} value={s.id}>
-                      {s.name} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}
-                      {s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:""})
-                    </option>)}
+                    {subjects.filter(s=>!isMapehParent(s,subjects)).map(s=>{
+                      const assigned=subjectAssignments.filter(a=>a.subject_id===s.id);
+                      const secNames=assigned.map(a=>sections.find(sc=>sc.id===a.section_id)?.name).filter(Boolean);
+                      return <option key={s.id} value={s.id}>
+                        {s.name} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}{secNames.length?` · ${secNames.join(", ")}`:(s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:"")})
+                      </option>;
+                    })}
                   </select>
                 </div>
                 <div>
@@ -2205,17 +2223,21 @@ const TeacherDashboard = ({ profile, onLogout }) => {
               </div>
               {selSubject&&(()=>{
                 const sub=subjects.find(s=>s.id===selSubject);
-                if (sub?.section_id) {
-                  // This subject belongs to one specific section only — nothing to pick.
-                  const secName=sections.find(sc=>sc.id===sub.section_id)?.name||"?";
+                const assigned=subjectAssignments.filter(a=>a.subject_id===sub?.id);
+                const assignedSectionIds=assigned.map(a=>a.section_id).filter(Boolean);
+                const hasGradeWideAssignment=assigned.some(a=>!a.section_id);
+                if (assignedSectionIds.length===1&&!hasGradeWideAssignment) {
+                  const secName=sections.find(sc=>sc.id===assignedSectionIds[0])?.name||"?";
                   return (
                     <div style={{fontSize:12,color:T.green2,fontWeight:600,
                       background:"#EEF6EC",borderRadius:6,padding:"6px 10px"}}>
-                      📍 Section: {secName} (this subject is assigned to this section only)
+                      📍 Section: {secName} · assigned to you
                     </div>
                   );
                 }
-                const secOptions=sections.filter(s=>s.grade_level===sub?.grade_level);
+                const secOptions=(assignedSectionIds.length&&!hasGradeWideAssignment)
+                  ? sections.filter(sec=>assignedSectionIds.includes(sec.id))
+                  : sections.filter(sec=>sec.grade_level===sub?.grade_level);
                 return (
                   <div>
                     <label style={{fontSize:12,color:T.textMuted,display:"block",marginBottom:4}}>
@@ -2747,12 +2769,45 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   );
 };
 
+const QuickAssignmentForm = ({subjects,sections,teachers,onAssign,busy}) => {
+  const [subjectId,setSubjectId]=useState("");
+  const [teacherId,setTeacherId]=useState("");
+  const [sectionIds,setSectionIds]=useState([]);
+  const [allSections,setAllSections]=useState(false);
+  const toggle=id=>setSectionIds(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+      <select value={subjectId} onChange={e=>setSubjectId(e.target.value)}>
+        <option value="">-- Subject --</option>
+        {subjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <select value={teacherId} onChange={e=>setTeacherId(e.target.value)}>
+        <option value="">-- Teacher --</option>
+        {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+    </div>
+    <label style={{display:"flex",alignItems:"center",gap:7,fontSize:11,fontWeight:700,color:T.text,marginBottom:8,cursor:"pointer"}}>
+      <input type="checkbox" checked={allSections} onChange={e=>{setAllSections(e.target.checked);if(e.target.checked)setSectionIds([]);}} style={{width:16,height:16}}/>
+      Assign to all sections in this grade
+    </label>
+    {!allSections&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
+      {sections.map(sec=><button key={sec.id} onClick={()=>toggle(sec.id)} style={{border:"1px solid #cbdcc9",borderRadius:999,padding:"6px 9px",fontSize:10,fontWeight:800,cursor:"pointer",background:sectionIds.includes(sec.id)?T.green3:T.white,color:sectionIds.includes(sec.id)?T.white:T.textMuted}}>{sectionIds.includes(sec.id)?"✓ ":""}{sec.name}</button>)}
+    </div>}
+    <Btn disabled={busy||!subjectId||!teacherId||(!allSections&&!sectionIds.length)} onClick={()=>onAssign({subjectId,teacherId,sectionIds,allSections})} style={{width:"100%"}}>{busy?"⏳ Saving...":allSections?"⚡ Assign to all sections":`⚡ Assign to ${sectionIds.length||0} section${sectionIds.length===1?"":"s"}`}</Btn>
+  </div>;
+};
+
 // ─── ADMIN DASHBOARD ─────────────────────────────────────
 const AdminDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("overview");
   const [students,setStudents]=useState([]);
   const [teachers,setTeachers]=useState([]);
   const [subjects,setSubjects]=useState([]);
+  const [subjectAssignments,setSubjectAssignments]=useState([]);
+  const [assignmentGrade,setAssignmentGrade]=useState(7);
+  const [assignmentSearch,setAssignmentSearch]=useState("");
+  const [assignmentTeacherFilter,setAssignmentTeacherFilter]=useState("");
+  const [assignmentBusy,setAssignmentBusy]=useState(false);
   const [grades,setGrades]=useState([]);
   const [appointments,setAppointments]=useState([]);
   const [sections,setSections]=useState([]);
@@ -2785,10 +2840,11 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
-    const [sR,tR,subR,gR,aR,secR,calR,settR,qR,holR]=await Promise.all([
+    const [sR,tR,subR,asR,gR,aR,secR,calR,settR,qR,holR]=await Promise.all([
       supabase.from("profiles").select("*").eq("role","student").order("grade_level").order("name"),
       supabase.from("profiles").select("*").eq("role","teacher").order("name"),
       supabase.from("subjects").select("*").order("grade_level"),
+      supabase.from("subject_assignments").select("*"),
       supabase.from("grades").select("*"),
       supabase.from("appointments").select("*").order("created_at",{ascending:false}),
       supabase.from("sections").select("*").order("grade_level").order("name"),
@@ -2800,6 +2856,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
     if (sR.data) setStudents(sR.data);
     if (tR.data) setTeachers(tR.data);
     if (subR.data) setSubjects(subR.data);
+    if (asR.data) setSubjectAssignments(asR.data);
     if (gR.data) setGrades(gR.data);
     if (aR.data) setAppointments(aR.data);
     if (secR.data) setSections(secR.data);
@@ -2984,6 +3041,12 @@ const AdminDashboard = ({ profile, onLogout }) => {
       tve_qualification:nSubject.tve_qualification||null,section_id:nSubject.section_id||null,
     }).select().single();
     if (error){notify("❌ "+error.message);return;}
+    if (inserted && nSubject.teacher_id) {
+      const {error:assignmentError}=await supabase.from("subject_assignments").insert({
+        subject_id:inserted.id,teacher_id:nSubject.teacher_id,section_id:nSubject.section_id||null
+      });
+      if (assignmentError){notify("⚠️ Subject created, but teacher assignment failed: "+assignmentError.message);}
+    }
     setNSubject({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:""});
     // MAPEH is never graded directly — auto-create its two components so
     // there's immediately something for teachers to encode grades against.
@@ -3007,9 +3070,47 @@ const AdminDashboard = ({ profile, onLogout }) => {
     notify("🗑️ Subject deleted."); fetchAll();
   };
 
-  const reassignTeacher=async(subId,teacherId)=>{
-    await supabase.from("subjects").update({teacher_id:teacherId||null}).eq("id",subId);
-    notify("✅ Teacher reassigned!"); fetchAll();
+  const assignmentRowsFor=(subId)=>subjectAssignments.filter(a=>a.subject_id===subId);
+
+  const toggleSubjectAssignment=async(subject,teacherId,sectionId)=>{
+    if (!teacherId) return;
+    setAssignmentBusy(true);
+    const existing=subjectAssignments.find(a=>a.subject_id===subject.id&&a.teacher_id===teacherId&&((a.section_id||null)===(sectionId||null)));
+    let error=null;
+    if (existing) {
+      ({error}=await supabase.from("subject_assignments").delete().eq("id",existing.id));
+    } else {
+      const result=await supabase.from("subject_assignments").insert({
+        subject_id:subject.id,teacher_id:teacherId,section_id:sectionId||null
+      });
+      error=result.error;
+      if (!error && !sectionId) {
+        // Preserve legacy behavior for grade-wide subjects.
+        await supabase.from("subjects").update({teacher_id:teacherId,section_id:null}).eq("id",subject.id);
+      }
+    }
+    setAssignmentBusy(false);
+    if (error){notify("❌ "+error.message);return;}
+    notify(existing?"✅ Assignment removed.":"✅ Teacher assigned.");
+    fetchAll();
+  };
+
+  const removeAllSubjectAssignments=async subject=>{
+    if (!window.confirm(`Remove all teacher assignments for ${subject.name} (Grade ${subject.grade_level})?`)) return;
+    const {error}=await supabase.from("subject_assignments").delete().eq("subject_id",subject.id);
+    if (error){notify("❌ "+error.message);return;}
+    await supabase.from("subjects").update({teacher_id:null}).eq("id",subject.id);
+    notify("✅ All assignments removed."); fetchAll();
+  };
+
+  const copyGradeAssignments=async(subject,fromSectionId,toSectionIds,teacherId)=>{
+    if (!teacherId||!toSectionIds.length) return;
+    setAssignmentBusy(true);
+    const rows=toSectionIds.map(sectionId=>({subject_id:subject.id,teacher_id:teacherId,section_id:sectionId}));
+    const {error}=await supabase.from("subject_assignments").upsert(rows,{onConflict:"subject_id,teacher_id,section_id"});
+    setAssignmentBusy(false);
+    if (error){notify("❌ "+error.message);return;}
+    notify(`✅ Assigned ${teacherId?toSectionIds.length:0} section(s).`); fetchAll();
   };
 
   const reassignQualification=async(subId,qualName)=>{
@@ -3522,7 +3623,13 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     <div style={{fontWeight:700,fontSize:13,color:T.text}}>{t.name}</div>
                     <div style={{fontSize:11,color:T.textMuted}}>{t.email}</div>
                     <div style={{fontSize:11,color:T.textMuted}}>
-                      {subjects.filter(s=>s.teacher_id===t.id).map(s=>s.name).join(", ")||"No subjects"}
+                      {(()=>{
+                      const names=new Set([
+                        ...subjects.filter(s=>s.teacher_id===t.id).map(s=>s.name),
+                        ...subjectAssignments.filter(a=>a.teacher_id===t.id).map(a=>subjects.find(s=>s.id===a.subject_id)?.name).filter(Boolean)
+                      ]);
+                      return Array.from(names).join(", ")||"No subjects";
+                    })()}
                     </div>
                     {t.is_curriculum_head&&(
                       <Badge text={`Curriculum Head Gr.${t.assigned_grade_level}`} color={T.green2}/>
@@ -3665,147 +3772,133 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
         {tab==="subjects"&&(
           <div>
-            <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>📚 Manage Subjects</div>
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Subject</div>
-              <div style={{display:"grid",gap:8,marginBottom:8}}>
-                <input placeholder="Subject Name *" value={nSubject.name}
-                  onChange={e=>setNSubject(p=>({...p,name:e.target.value}))}/>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  <select value={nSubject.grade_level}
-                    onChange={e=>setNSubject(p=>({...p,grade_level:e.target.value,section_id:"",
-                      tve_qualification:(parseInt(e.target.value)>=8&&parseInt(e.target.value)<=10)
-                        ?p.tve_qualification:""}))}>
+            <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:6}}>📚 Subjects & Teaching Assignments</div>
+            <div style={{fontSize:12,color:T.textMuted,marginBottom:12,lineHeight:1.6}}>
+              Assign by <strong>Subject + Section + Teacher</strong>. One subject can now have many teachers,
+              and each teacher can be assigned to different sections without creating duplicate subject records.
+            </div>
+
+            <Card style={{marginBottom:12,padding:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>GRADE</label>
+                  <select value={assignmentGrade} onChange={e=>setAssignmentGrade(parseInt(e.target.value))}>
                     {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
                   </select>
-                  <select value={nSubject.teacher_id}
-                    onChange={e=>setNSubject(p=>({...p,teacher_id:e.target.value}))}>
-                    <option value="">-- Teacher (opt) --</option>
+                </div>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>TEACHER</label>
+                  <select value={assignmentTeacherFilter} onChange={e=>setAssignmentTeacherFilter(e.target.value)}>
+                    <option value="">All teachers</option>
                     {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
-                <select value={nSubject.section_id}
-                  onChange={e=>setNSubject(p=>({...p,section_id:e.target.value}))}>
-                  <option value="">-- All sections in this grade (default) --</option>
-                  {sections.filter(s=>s.grade_level===parseInt(nSubject.grade_level)).map(s=>
-                    <option key={s.id} value={s.id}>Only Section: {s.name}</option>)}
-                </select>
-                {parseInt(nSubject.grade_level)>=8&&parseInt(nSubject.grade_level)<=10&&(
-                  <select value={nSubject.tve_qualification}
-                    onChange={e=>setNSubject(p=>({...p,tve_qualification:e.target.value}))}>
-                    <option value="">-- TVE Qualification (none / general subject) --</option>
-                    {qualifications.map(q=><option key={q.id} value={q.name}>{q.name}</option>)}
-                  </select>
-                )}
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>SEARCH SUBJECT</label>
+                  <input value={assignmentSearch} onChange={e=>setAssignmentSearch(e.target.value)} placeholder="e.g. Mathematics"/>
+                </div>
               </div>
-              <Btn onClick={addSubject} style={{width:"100%"}}>➕ Add Subject</Btn>
             </Card>
-            {GRADE_LEVELS.map(gl=>{
-              // MAPEH's components render nested under their parent, not as
-              // separate top-level cards.
-              const subs=subjects.filter(s=>s.grade_level===gl&&!s.parent_subject_id);
-              if (!subs.length) return null;
-              const isTveGrade=gl>=8&&gl<=10;
-              return (
-                <div key={gl} style={{marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.white,background:T.green1,
-                    padding:"4px 10px",borderRadius:6,marginBottom:6}}>Grade {gl}</div>
-                  {subs.map(s=>{
-                    const comps=mapehComponentsOf(s,subjects);
-                    const isMapeh=s.name.trim().toUpperCase()==="MAPEH";
-                    return (
-                      <div key={s.id}>
-                        <Card style={{marginBottom:comps.length||isMapeh?4:6,padding:"10px 12px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",
-                            alignItems:"center",marginBottom:6}}>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:13,color:T.text}}>{s.name}</div>
-                              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:2}}>
-                                {isMapeh&&<Badge text="🧩 Averaged from components" color={T.green3}/>}
-                                {s.tve_qualification&&<Badge text={s.tve_qualification} color="#7b1fa2"/>}
-                                {s.section_id&&<Badge
-                                  text={`📍 ${sections.find(sc=>sc.id===s.section_id)?.name||"?"} only`}
-                                  color={T.blue}/>}
-                              </div>
-                            </div>
-                            <div style={{display:"flex",gap:4}}>
-                              <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
-                                onClick={()=>setEditSubject(s)}>✏️</Btn>
-                              <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
-                                onClick={()=>delSubject(s.id)}>🗑️</Btn>
-                            </div>
-                          </div>
-                          {!isMapeh&&(
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                              <div style={{fontSize:11,color:T.textMuted,flexShrink:0}}>Teacher:</div>
-                              <select value={s.teacher_id||""}
-                                onChange={e=>reassignTeacher(s.id,e.target.value)}
-                                style={{fontSize:12,padding:"5px 8px"}}>
-                                <option value="">-- Unassigned --</option>
-                                {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                              </select>
-                            </div>
-                          )}
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:isTveGrade?8:0}}>
-                            <div style={{fontSize:11,color:T.textMuted,flexShrink:0}}>Section:</div>
-                            <select value={s.section_id||""}
-                              onChange={e=>reassignSubjectSection(s.id,e.target.value)}
-                              style={{fontSize:12,padding:"5px 8px"}}>
-                              <option value="">-- All sections in Gr.{gl} --</option>
-                              {sections.filter(sec=>sec.grade_level===gl).map(sec=>
-                                <option key={sec.id} value={sec.id}>Only: {sec.name}</option>)}
-                            </select>
-                          </div>
-                          {isTveGrade&&!isMapeh&&(
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{fontSize:11,color:T.textMuted,flexShrink:0}}>TVE Qual.:</div>
-                              <select value={s.tve_qualification||""}
-                                onChange={e=>reassignQualification(s.id,e.target.value)}
-                                style={{fontSize:12,padding:"5px 8px"}}>
-                                <option value="">-- None / General --</option>
-                                {qualifications.map(q=><option key={q.id} value={q.name}>{q.name}</option>)}
-                              </select>
-                            </div>
-                          )}
-                        </Card>
-                        {comps.length>0&&(
-                          <div style={{marginLeft:16,marginBottom:8,paddingLeft:10,
-                            borderLeft:"2px solid #C9E0BE"}}>
-                            {comps.map(c=>(
-                              <Card key={c.id} style={{marginBottom:6,padding:"8px 10px"}}>
-                                <div style={{display:"flex",justifyContent:"space-between",
-                                  alignItems:"center",marginBottom:6}}>
-                                  <div style={{fontWeight:600,fontSize:12,color:T.text}}>🧩 {c.name}</div>
-                                  <Btn color={T.red} style={{padding:"4px 8px",fontSize:10}}
-                                    onClick={()=>delSubject(c.id)}>🗑️</Btn>
-                                </div>
-                                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <div style={{fontSize:11,color:T.textMuted,flexShrink:0}}>Teacher:</div>
-                                  <select value={c.teacher_id||""}
-                                    onChange={e=>reassignTeacher(c.id,e.target.value)}
-                                    style={{fontSize:12,padding:"5px 8px"}}>
-                                    <option value="">-- Unassigned --</option>
+
+            <Card style={{padding:0,overflow:"hidden",marginBottom:12}}>
+              <div style={{padding:"10px 12px",background:T.green1,color:T.white,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:13}}>Grade {assignmentGrade} Assignment Matrix</div>
+                  <div style={{fontSize:10,opacity:.82}}>Tap a cell to assign or remove a teacher.</div>
+                </div>
+                <div style={{fontSize:11,fontWeight:700}}>{sections.filter(s=>s.grade_level===assignmentGrade).length} sections</div>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",minWidth:760,borderCollapse:"separate",borderSpacing:0}}>
+                  <thead>
+                    <tr>
+                      <th style={{position:"sticky",left:0,zIndex:3,background:T.bgPanel,textAlign:"left",padding:"8px 10px",fontSize:10,color:T.textMuted,borderBottom:"1px solid #dbe5d8"}}>SUBJECT</th>
+                      {sections.filter(sec=>sec.grade_level===assignmentGrade).map(sec=><th key={sec.id} style={{padding:"8px 7px",fontSize:10,color:T.textMuted,borderBottom:"1px solid #dbe5d8",whiteSpace:"nowrap"}}>{sec.name}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).map(sub=>{
+                      const secList=sections.filter(sec=>sec.grade_level===assignmentGrade);
+                      return (
+                        <tr key={sub.id}>
+                          <td style={{position:"sticky",left:0,zIndex:2,background:T.white,padding:"9px 10px",borderBottom:"1px solid #edf1eb",minWidth:170}}>
+                            <div style={{fontWeight:800,fontSize:12,color:T.text}}>{sub.name}</div>
+                            {sub.tve_qualification&&<div style={{fontSize:9,color:"#7b1fa2",marginTop:2}}>{sub.tve_qualification}</div>}
+                            <button disabled={assignmentBusy} onClick={()=>removeAllSubjectAssignments(sub)} style={{border:0,background:"none",color:T.red,fontSize:9,fontWeight:700,padding:"3px 0",cursor:"pointer"}}>Clear all</button>
+                          </td>
+                          {secList.map(sec=>{
+                            const allRows=assignmentRowsFor(sub.id).filter(a=>a.section_id===sec.id || !a.section_id);
+                            const rows=allRows.filter(a=>!assignmentTeacherFilter||a.teacher_id===assignmentTeacherFilter);
+                            return (
+                              <td key={sec.id} style={{padding:5,borderBottom:"1px solid #edf1eb",verticalAlign:"top",minWidth:125}}>
+                                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                                  {rows.map(a=>{
+                                    const teacher=teachers.find(t=>t.id===a.teacher_id);
+                                    return <button key={a.id} disabled={assignmentBusy} onClick={()=>toggleSubjectAssignment(sub,a.teacher_id,a.section_id||null)} title="Remove assignment" style={{textAlign:"left",border:"1px solid #cfe0d0",background:assignmentTeacherFilter===a.teacher_id?"#dff2e3":"#f7fbf7",borderRadius:7,padding:"5px 6px",cursor:"pointer",fontSize:10,color:T.text,fontWeight:700}}>{teacher?.name||"Unknown"}<span style={{display:"block",fontSize:8,color:T.textMuted,fontWeight:500}}>{a.section_id?"section assignment":"all sections"} · tap to remove</span></button>;
+                                  })}
+                                  <select disabled={assignmentBusy} value="" onChange={e=>{if(e.target.value)toggleSubjectAssignment(sub,e.target.value,sec.id);}} style={{fontSize:10,padding:"6px 5px",borderStyle:"dashed",color:T.green2,fontWeight:800,background:"transparent"}}>
+                                    <option value="">＋ Assign teacher</option>
                                     {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
                                   </select>
                                 </div>
-                              </Card>
-                            ))}
-                          </div>
-                        )}
-                        {isMapeh&&comps.length===0&&(
-                          <div style={{marginBottom:10}}>
-                            <Btn color={T.yellowDark} style={{fontSize:11,padding:"6px 10px"}}
-                              onClick={()=>addMapehComponents(s)}>
-                              ➕ Add PE and Health / Music and Arts components
-                            </Btn>
-                          </div>
-                        )}
-                      </div>
-                    );
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).length===0&&(
+                <div style={{padding:20,textAlign:"center",color:T.gray,fontSize:12}}>No subjects match this grade/search.</div>
+              )}
+            </Card>
+
+            <Card style={{marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:5}}>⚡ Quick assignment</div>
+              <div style={{fontSize:11,color:T.textMuted,marginBottom:9}}>Use this when one teacher handles the same subject for several sections.</div>
+              <QuickAssignmentForm
+                subjects={subjects.filter(s=>s.grade_level===assignmentGrade&&!s.parent_subject_id)}
+                sections={sections.filter(s=>s.grade_level===assignmentGrade)}
+                teachers={teachers}
+                onAssign={async({subjectId,teacherId,sectionIds,allSections})=>{
+                  const sub=subjects.find(s=>s.id===subjectId);
+                  if (!sub) return;
+                  if (allSections) {
+                    setAssignmentBusy(true);
+                    const {error}=await supabase.from("subject_assignments").upsert({subject_id:sub.id,teacher_id:teacherId,section_id:null});
+                    setAssignmentBusy(false);
+                    if (error) notify("❌ "+error.message); else { notify("✅ Teacher assigned to all sections in this grade."); fetchAll(); }
+                  } else await copyGradeAssignments(sub,null,sectionIds,teacherId);
+                }}
+                busy={assignmentBusy}
+              />
+            </Card>
+
+            <div style={{fontSize:13,fontWeight:800,color:T.green1,margin:"14px 0 8px"}}>📋 Assignment summary</div>
+            {teachers.filter(t=>!assignmentTeacherFilter||t.id===assignmentTeacherFilter).map(t=>{
+              const rows=subjectAssignments.filter(a=>a.teacher_id===t.id);
+              if (!rows.length) return null;
+              return <Card key={t.id} style={{marginBottom:7,padding:"9px 11px"}}>
+                <div style={{fontWeight:800,fontSize:12,color:T.text}}>{t.name}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:5}}>
+                  {rows.map(a=>{
+                    const sub=subjects.find(s=>s.id===a.subject_id),sec=sections.find(s=>s.id===a.section_id);
+                    if (!sub||sub.grade_level!==assignmentGrade) return null;
+                    return <span key={a.id} style={{fontSize:9,padding:"4px 7px",borderRadius:999,background:T.bgPanel,color:T.text}}>{sub.name} · {sec?.name||`All Gr.${sub.grade_level}`}</span>;
                   })}
                 </div>
-              );
+              </Card>;
             })}
+
+            <Card style={{marginTop:12,padding:10,background:"#fffaf0",border:"1px solid #f4dfae"}}>
+              <div style={{fontSize:11,fontWeight:800,color:T.yellowDark,marginBottom:3}}>💡 How AGRIANS now thinks about teaching load</div>
+              <div style={{fontSize:10,color:T.textMuted,lineHeight:1.6}}>
+                One subject is created once. Teachers are assigned to the sections they actually handle.
+                This means Mathematics can have Teacher A in Section A, Teacher B in Section B, and Teacher A again in Section C — without duplicate subject records.
+              </div>
+            </Card>
           </div>
         )}
 
