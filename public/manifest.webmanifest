@@ -1,0 +1,17 @@
+{
+  "name": "AGRIANS · MCPBAHS Digital School Portal",
+  "short_name": "AGRIANS",
+  "description": "Maria Cristina P. Belcar Agricultural High School digital school portal.",
+  "lang": "en-PH",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait-primary",
+  "theme_color": "#1F4638",
+  "background_color": "#f8fafc",
+  "icons": [
+    {"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}

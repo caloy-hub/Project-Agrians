@@ -1268,3 +1268,182 @@ tbody tr:last-child td {
     border: 1px solid #ddd;
   }
 }
+
+/* ============================================================
+   AGRIANS 2.0 — modern visual system
+   ============================================================ */
+:root{
+  --agri-deep:#102f22;
+  --agri-forest:#1f5a3e;
+  --agri-green:#2f8a57;
+  --agri-lime:#a7cf68;
+  --agri-gold:#f5c842;
+  --agri-cream:#f7f8f2;
+}
+
+.dashboard-scroll{
+  flex:1;
+  overflow-y:auto;
+  padding:20px clamp(14px,3vw,36px) 92px;
+  scroll-behavior:smooth;
+}
+.dashboard-inner{max-width:1440px;margin:0 auto;width:100%;}
+.tab-scene{animation:agriPageIn .48s var(--ease-out-expo) both;}
+.teacher-welcome-wrap,.admin-welcome-wrap{padding:18px clamp(14px,3vw,36px) 0;}
+.teacher-welcome-wrap>.welcome-panel,.admin-welcome-wrap>.welcome-panel{max-width:1440px;margin:0 auto;}
+
+.welcome-panel{
+  position:relative;
+  min-height:188px;
+  overflow:hidden;
+  isolation:isolate;
+  border-radius:24px;
+  padding:28px 32px;
+  margin-bottom:22px;
+  color:#fff;
+  background:
+    radial-gradient(circle at 82% 25%,rgba(167,207,104,.24),transparent 25%),
+    linear-gradient(135deg,#102f22 0%,#1f5a3e 58%,#2f8a57 100%);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 18px 45px rgba(16,47,34,.18);
+}
+.welcome-panel:after{
+  content:"";
+  position:absolute;inset:0;
+  background-image:linear-gradient(120deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:34px 34px;
+  mask-image:linear-gradient(to right,black,transparent 70%);
+  pointer-events:none;
+}
+.welcome-content{position:relative;z-index:3;max-width:760px;}
+.welcome-eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:800;opacity:.78;display:flex;align-items:center;gap:8px;}
+.welcome-dot{width:7px;height:7px;border-radius:50%;background:var(--agri-gold);box-shadow:0 0 0 5px rgba(245,200,66,.12);animation:welcomePulse 2.2s ease-in-out infinite;}
+.welcome-panel h1{color:#fff;font-size:clamp(25px,3vw,36px);margin:10px 0 5px;letter-spacing:-.035em;}
+.welcome-panel p{color:rgba(255,255,255,.78);font-size:13px;}
+.welcome-stats{display:flex;gap:9px;flex-wrap:wrap;margin-top:19px;}
+.welcome-stat{display:flex;align-items:center;gap:9px;padding:8px 12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.12);backdrop-filter:blur(8px);border-radius:13px;min-width:112px;}
+.welcome-stat-icon{font-size:16px}.welcome-stat strong{display:block;font-size:15px;line-height:1.05}.welcome-stat small{display:block;color:rgba(255,255,255,.62);font-size:9px;margin-top:2px;}
+.welcome-art{position:absolute;right:7%;top:50%;transform:translateY(-50%);width:180px;height:180px;z-index:2;}
+.welcome-ring{position:absolute;inset:22px;border:1px solid rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 45px rgba(167,207,104,.1);animation:float 5s ease-in-out infinite;}
+.welcome-ring:before,.welcome-ring:after{content:"";position:absolute;border:1px solid rgba(255,255,255,.11);border-radius:50%;}
+.welcome-ring:before{inset:-15px}.welcome-ring:after{inset:15px}.welcome-ring span{font-size:42px;filter:drop-shadow(0 8px 12px rgba(0,0,0,.2));animation:bounce-subtle 2.5s ease-in-out infinite;}
+.leaf{position:absolute;color:var(--agri-lime);font-size:42px;opacity:.35;transform:rotate(35deg);animation:float 4s ease-in-out infinite;}
+.leaf-1{right:8px;top:5px}.leaf-2{left:0;bottom:5px;animation-delay:1s;}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px;}
+.kpi-card{display:flex;align-items:center;gap:14px;padding:18px!important;border-radius:18px!important;background:linear-gradient(145deg,var(--bg-surface),var(--bg-elevated))!important;}
+.kpi-icon{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex:none;}
+.kpi-value{font-size:28px;font-weight:900;line-height:1}.kpi-label{font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-top:5px;}
+
+.insight-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
+.insight-card{min-height:176px;border-radius:18px!important;}
+.insight-kicker,.section-eyebrow{font-size:9px;letter-spacing:.13em;text-transform:uppercase;font-weight:800;color:var(--accent);margin-bottom:5px;}
+.insight-value{font-size:30px;font-weight:900;color:var(--text-primary);line-height:1;margin:3px 0 7px;}
+.insight-note{font-size:10px;color:var(--text-muted);margin-top:5px;}
+.progress-ring{border-radius:50%;padding:9px;display:grid;place-items:center;flex:none;animation:ringIn .8s var(--ease-out-back) both;}
+.progress-ring-inner{width:100%;height:100%;border-radius:50%;background:var(--bg-surface);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:inset 0 0 0 1px var(--border-subtle);}
+.progress-ring-inner strong{font-size:20px;color:var(--text-primary)}.progress-ring-inner span{font-size:8px;color:var(--text-muted);text-transform:uppercase;font-weight:800;letter-spacing:.05em;}
+
+.mini-chart{position:relative;padding-top:8px}.mini-chart-bars{height:112px;display:flex;align-items:flex-end;gap:10px;padding:0 4px;border-bottom:1px solid var(--border-subtle);}
+.mini-bar-item{height:100%;flex:1;display:flex;align-items:center;justify-content:flex-end;flex-direction:column;min-width:28px;gap:3px;}
+.mini-bar-track{height:78px;width:100%;max-width:38px;display:flex;align-items:flex-end;background:var(--accent-bg);border-radius:8px 8px 4px 4px;overflow:hidden;}
+.mini-bar-fill{width:100%;background:linear-gradient(180deg,var(--agri-lime),var(--accent));border-radius:8px 8px 2px 2px;min-height:3px;animation:barGrow .7s var(--ease-out-expo) both;transform-origin:bottom;}
+.mini-bar-item strong{font-size:9px;color:var(--text-primary)}.mini-bar-item span{font-size:8px;color:var(--text-muted);white-space:nowrap;}
+.mini-chart-caption{font-size:9px;color:var(--text-muted);margin-top:6px;text-align:right;}
+.trend-chart{position:relative;margin-top:4px}.trend-chart svg{width:100%;height:calc(100% - 20px);overflow:visible;}
+.trend-line{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 3px 4px rgba(47,138,87,.2));}
+.trend-area{fill:url(#agriansTrendFill);stroke:none}.trend-dot{fill:var(--bg-surface);stroke:var(--accent);stroke-width:3;}
+.trend-labels{display:flex;justify-content:space-between;font-size:8px;color:var(--text-muted);padding:0 5px;}
+.structure-list{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.structure-list div{padding:10px;border-radius:12px;background:var(--bg-hover);border:1px solid var(--border-subtle);}.structure-list span{display:block;font-size:9px;color:var(--text-muted)}.structure-list strong{display:block;font-size:18px;color:var(--text-primary);margin-top:2px;}
+
+.section-heading{display:flex;justify-content:space-between;align-items:end;gap:15px;margin:18px 0 12px}.section-heading h2{font-size:18px;}
+.card{border-radius:18px!important;transition:transform .28s var(--ease-out-expo),box-shadow .28s ease,border-color .28s ease!important;}
+.card:hover{transform:translateY(-3px)!important;box-shadow:0 16px 35px rgba(15,23,42,.08)!important;}
+.btn{transition:transform .18s var(--ease-out-back),box-shadow .25s ease,filter .25s ease!important;}
+.btn:hover{filter:saturate(1.08);}.btn:focus-visible{box-shadow:0 0 0 4px var(--accent-bg);}
+input,select,textarea{transition:border-color .2s ease,box-shadow .2s ease,background .2s ease!important;}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px var(--accent-bg)!important;border-color:var(--accent)!important;}
+.tab-scene>.card,.tab-scene>div{animation:agriStagger .45s var(--ease-out-expo) both;}
+.tab-scene>.card:nth-child(2),.tab-scene>div:nth-child(2){animation-delay:.05s;}
+.tab-scene>.card:nth-child(3),.tab-scene>div:nth-child(3){animation-delay:.1s;}
+
+@keyframes agriPageIn{from{opacity:0;transform:translateY(10px) scale(.995)}to{opacity:1;transform:none}}
+@keyframes agriStagger{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes ringIn{from{opacity:0;transform:scale(.7) rotate(-20deg)}to{opacity:1;transform:none}}
+@keyframes welcomePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.82)}}
+
+@media (max-width:900px){
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .welcome-art{right:-15px;opacity:.75}.welcome-panel{padding:24px;}
+}
+@media (max-width:640px){
+  .dashboard-scroll{padding:14px 12px 84px}.teacher-welcome-wrap,.admin-welcome-wrap{padding:12px 12px 0;}
+  .welcome-panel{min-height:205px;padding:20px;border-radius:20px}.welcome-panel h1{font-size:25px}.welcome-panel p{max-width:75%;}
+  .welcome-art{transform:translate(22%, -50%) scale(.78);opacity:.5;}
+  .welcome-stats{gap:6px}.welcome-stat{min-width:0;flex:1;padding:7px 8px}.welcome-stat small{font-size:8px;}
+  .kpi-grid,.insight-grid{grid-template-columns:1fr;gap:10px}.kpi-card{padding:14px!important;}
+  .insight-card{min-height:150px}.structure-list{grid-template-columns:1fr 1fr;}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important;}
+}
+
+/* ── v2.2 Android/PWA install experience ───────────────────────────── */
+.install-app-prompt{
+  position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+  z-index:1000;width:min(560px,calc(100vw - 24px));display:flex;align-items:center;gap:12px;
+  padding:12px 14px;border:1px solid rgba(47,107,76,.18);border-radius:18px;
+  background:color-mix(in srgb,var(--bg-surface) 92%, transparent);backdrop-filter:blur(18px);
+  box-shadow:0 18px 50px rgba(15,23,42,.18);animation:installIn .45s var(--ease-out-expo) both;
+}
+.install-app-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:var(--accent-bg);font-size:21px;flex:none}
+.install-app-copy{min-width:0;flex:1}.install-app-copy strong{display:block;color:var(--text-primary);font-size:13px}.install-app-copy span{display:block;color:var(--text-muted);font-size:10px;line-height:1.35;margin-top:2px}
+.install-app-btn{padding:9px 14px;background:var(--accent);color:#fff;border-radius:11px;font-size:11px;white-space:nowrap}.install-app-btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-glow)}
+.install-app-close{width:28px;height:28px;border-radius:50%;background:transparent;color:var(--text-muted);font-size:19px;flex:none}.install-app-close:hover{background:var(--bg-hover);color:var(--text-primary)}
+@keyframes installIn{from{opacity:0;transform:translate(-50%,18px) scale(.97)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@media(max-width:640px){.install-app-prompt{bottom:12px}.install-app-copy span{font-size:9px}.install-app-btn{padding:9px 11px}}
+
+
+/* ── v2.3 Android-first interaction layer ───────────────────────────── */
+:root { --safe-bottom: env(safe-area-inset-bottom, 0px); --safe-top: env(safe-area-inset-top, 0px); }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+.connection-banner{
+  position:fixed;top:0;left:0;right:0;z-index:1200;padding:9px 16px calc(9px + var(--safe-top));
+  background:#7f1d1d;color:#fff;text-align:center;font-size:11px;font-weight:700;
+  box-shadow:0 5px 18px rgba(127,29,29,.22);animation:agriSlideDown .35s ease both;
+}
+.refresh-indicator{
+  position:fixed;top:calc(10px + var(--safe-top));left:50%;transform:translateX(-50%);z-index:1190;
+  padding:8px 13px;border-radius:999px;background:var(--bg-surface);color:var(--accent);
+  border:1px solid var(--accent-border);box-shadow:var(--shadow-lg);font-size:11px;font-weight:800;
+  animation:refreshDrop .35s var(--ease-out-expo) both;
+}
+.refresh-indicator span{display:inline-block;margin-right:5px;font-size:15px;animation:spin 0.7s linear infinite}
+.mobile-status-pill{
+  position:fixed;top:10px;right:14px;z-index:105;display:flex;align-items:center;gap:5px;
+  padding:5px 8px;border:1px solid var(--border-subtle);border-radius:999px;background:color-mix(in srgb,var(--bg-surface) 86%,transparent);
+  backdrop-filter:blur(12px);font-size:9px;font-weight:800;color:var(--text-muted);opacity:.82;pointer-events:none;
+}
+.status-pulse{width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.12)}
+.mobile-status-pill.is-offline .status-pulse{background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.12)}
+@keyframes agriSlideDown{from{transform:translateY(-100%)}to{transform:none}}
+@keyframes refreshDrop{from{opacity:0;transform:translate(-50%,-15px) scale(.95)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+
+@media(max-width:640px){
+  body{padding-bottom:var(--safe-bottom);}
+  .mobile-status-pill{top:calc(7px + var(--safe-top));right:9px;opacity:.68;}
+  .sidebar-toggle{top:calc(10px + var(--safe-top));}
+  .dashboard-scroll{padding-bottom:calc(92px + var(--safe-bottom))!important;overscroll-behavior-y:contain;}
+  .install-app-prompt{bottom:calc(12px + var(--safe-bottom));}
+  .btn{min-height:42px;}
+  input,select,textarea{min-height:44px;font-size:16px!important;}
+  .bottom-nav{padding-bottom:var(--safe-bottom)!important;}
+}
+
+/* Touch-friendly feedback without the heavy desktop hover lift. */
+@media (hover:none){
+  .card:hover{transform:none!important;box-shadow:var(--shadow-sm)!important;}
+  .btn:active,.sidebar-link:active{transform:scale(.97);}
+}

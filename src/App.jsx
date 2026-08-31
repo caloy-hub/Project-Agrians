@@ -236,6 +236,111 @@ const Badge = ({ text, color }) => (
   <span className="badge" style={{background:color+"1a",color,border:`1px solid ${color}55`,
     borderRadius:"var(--radius-full)",padding:"2px 10px",fontSize:11,fontWeight:700}}>{text}</span>
 );
+
+/* ─────────────────────────────────────────────────────────
+   AGRIANS 2.0 visual layer
+   Lightweight, dependency-free data visualizations and welcome
+   surfaces. These sit above the existing business logic so the
+   existing DepEd form generators remain untouched.
+   ───────────────────────────────────────────────────────── */
+const WelcomePanel = ({ profile, role="User", stats=[] }) => {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const roleCopy = {
+    student:"Your learning journey at MCPBAHS starts here.",
+    teacher:"Your teaching workspace is ready.",
+    admin:"Your school operations command center is ready.",
+  }[role] || "Welcome to AGRIANS.";
+  return (
+    <section className="welcome-panel">
+      <div className="welcome-orb welcome-orb-a"/>
+      <div className="welcome-orb welcome-orb-b"/>
+      <div className="welcome-content">
+        <div className="welcome-eyebrow"><span className="welcome-dot"/> AGRIANS · S.Y. 2026–2027</div>
+        <h1>{greeting}, {profile?.name?.split(" ")[0] || "there"}.</h1>
+        <p>{roleCopy}</p>
+        <div className="welcome-stats">
+          {stats.filter(Boolean).slice(0,3).map((s,i)=>(
+            <div className="welcome-stat" key={i}>
+              <span className="welcome-stat-icon">{s.icon}</span>
+              <div><strong>{s.value}</strong><small>{s.label}</small></div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="welcome-art" aria-hidden="true">
+        <div className="leaf leaf-1">⌁</div><div className="leaf leaf-2">⌁</div>
+        <div className="welcome-ring"><span>🌱</span></div>
+      </div>
+    </section>
+  );
+};
+
+const ProgressRing = ({ value=0, label="Progress", size=112 }) => {
+  const safe=Math.max(0,Math.min(100,Number(value)||0));
+  return (
+    <div className="progress-ring" style={{width:size,height:size,background:`conic-gradient(var(--accent) ${safe*3.6}deg, var(--border-subtle) 0)`}}>
+      <div className="progress-ring-inner">
+        <strong>{Math.round(safe)}%</strong><span>{label}</span>
+      </div>
+    </div>
+  );
+};
+
+const MiniBarChart = ({ data=[], max, height=150, label="Count" }) => {
+  const highest=max||Math.max(1,...data.map(d=>Number(d.value)||0));
+  return (
+    <div className="mini-chart" style={{height}}>
+      <div className="mini-chart-bars">
+        {data.map((d,i)=>{
+          const v=Number(d.value)||0;
+          return (
+            <div className="mini-bar-item" key={i} title={`${d.label}: ${v}`}>
+              <div className="mini-bar-track"><div className="mini-bar-fill" style={{height:`${Math.max(v?7:0,(v/highest)*100)}%`}}/></div>
+              <strong>{v}</strong><span>{d.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mini-chart-caption">{label}</div>
+    </div>
+  );
+};
+
+const TrendChart = ({ values=[], labels=[], height=150 }) => {
+  const nums=values.map(v=>Number(v)||0);
+  const max=Math.max(1,...nums), min=Math.min(0,...nums);
+  const w=520, h=height, pad=18;
+  const points=nums.map((v,i)=>{
+    const x=pad+(nums.length<=1?0:i*(w-pad*2)/(nums.length-1));
+    const y=h-pad-((v-min)/(max-min||1))*(h-pad*2);
+    return `${x},${y}`;
+  }).join(" ");
+  return (
+    <div className="trend-chart" style={{height}}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="Performance trend">
+        <defs><linearGradient id="agriansTrendFill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopOpacity=".25"/><stop offset="100%" stopOpacity="0"/>
+        </linearGradient></defs>
+        <polyline className="trend-area" points={`${pad},${h-pad} ${points} ${w-pad},${h-pad}`}/>
+        <polyline className="trend-line" points={points}/>
+        {nums.map((v,i)=>{
+          const [x,y]=points.split(" ")[i].split(",");
+          return <circle className="trend-dot" key={i} cx={x} cy={y} r="4"/>;
+        })}
+      </svg>
+      <div className="trend-labels">{labels.map((l,i)=><span key={i}>{l}</span>)}</div>
+    </div>
+  );
+};
+
+const SectionHeading = ({eyebrow,title,action}) => (
+  <div className="section-heading">
+    <div><div className="section-eyebrow">{eyebrow}</div><h2>{title}</h2></div>
+    {action}
+  </div>
+);
+
 const Toast = ({ msg }) => msg?(
   <div className="animate-slide-in-up" style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",
     background:msg.startsWith("✅")?T.green2:msg.startsWith("🗑️")?"#5d4037":
@@ -1328,7 +1433,14 @@ const StudentDashboard = ({ profile, onLogout }) => {
       <TopBar name={profile.name}
         sub={`Grade ${profile.grade_level}${section?" – "+section.name:""} · LRN: ${profile.lrn}`}
         onLogout={onLogout}/>
-      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="dashboard-scroll">
+        <div className="dashboard-inner">
+          <WelcomePanel profile={profile} role="student" stats={[
+            {icon:"📊",value:overallAvg||"—",label:"General average"},
+            {icon:"📚",value:subjects.filter(s=>!s.parent_subject_id).length,label:"Subjects"},
+            {icon:"🏫",value:section?.name||"—",label:"Section"}
+          ]}/>
+          <div key={tab} className="tab-scene">
 
         {tab==="profile"&&(
           <div>
@@ -1366,11 +1478,24 @@ const StudentDashboard = ({ profile, onLogout }) => {
             <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>
               📊 Grades & Attendance — S.Y. 2026–2027
             </div>
-            <Card style={{textAlign:"center",marginBottom:10}}>
-              <div style={{fontSize:11,color:T.textMuted}}>General Average</div>
-              <div style={{fontSize:38,fontWeight:900,color:T.green2}}>{overallAvg||"—"}</div>
-              {overallAvg&&<Badge text={remark(overallAvg).r} color={remark(overallAvg).c}/>}
-            </Card>
+            <div className="insight-grid">
+              <Card className="insight-card" style={{display:"flex",alignItems:"center",gap:16}}>
+                <ProgressRing value={overallAvg||0} label="Average"/>
+                <div>
+                  <div className="insight-kicker">ACADEMIC SNAPSHOT</div>
+                  <div className="insight-value">{overallAvg||"—"}</div>
+                  {overallAvg&&<Badge text={remark(overallAvg).r} color={remark(overallAvg).c}/>}
+                  <div className="insight-note">Across your recorded subjects</div>
+                </div>
+              </Card>
+              <Card className="insight-card">
+                <div className="insight-kicker">TERM PERFORMANCE</div>
+                <TrendChart
+                  values={[1,2,3].map(t=>avg(subjects.filter(s=>!s.parent_subject_id).map(s=>getG(s.id,t)).filter(Boolean))||0)}
+                  labels={["Term 1","Term 2","Term 3"]}
+                />
+              </Card>
+            </div>
             <Card style={{padding:0,overflow:"hidden",marginBottom:12}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead>
@@ -1569,6 +1694,8 @@ const StudentDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+          </div>
+        </div>
       </div>
       <BottomNav
         tabs={[["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"]]}
@@ -2031,13 +2158,22 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         sub={`Teacher${mySection?" · Adviser: "+mySection.name:""}${profile.is_curriculum_head?" · Curriculum Head Gr."+profile.assigned_grade_level:""}`}
         onLogout={onLogout}/>
       <Toast msg={toast}/>
+      <div className="teacher-welcome-wrap">
+        <WelcomePanel profile={profile} role="teacher" stats={[
+          {icon:"👥",value:mySection?classStudents.length:"—",label:"Learners"},
+          {icon:"📚",value:subjects.length,label:"Assigned subjects"},
+          {icon:"📅",value:appointments.filter(a=>a.status==="Pending").length,label:"Pending appointments"}
+        ]}/>
+      </div>
       {editStudent&&(
         <EditStudentModal student={editStudent}
           sections={sections.filter(s=>s.grade_level===profile.assigned_grade_level)}
           qualifications={qualifications} canChangeGrade={false}
           onSave={handleUpdateStudent} onClose={()=>setEditStudent(null)}/>
       )}
-      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="dashboard-scroll">
+        <div className="dashboard-inner">
+          <div key={tab} className="tab-scene">
 
         {tab==="encode"&&(
           <div>
@@ -2150,6 +2286,38 @@ const TeacherDashboard = ({ profile, onLogout }) => {
             <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:8}}>📈 Grade Encoding Progress</div>
             <EncodingProgressCard
               result={computeSectionEncoding(mySection,allGradeSubjects,classStudents,classGrades)}/>
+            {(()=>{
+              const enc=computeSectionEncoding(mySection,allGradeSubjects,classStudents,classGrades);
+              const summary=computeGradeSummary(summaryTerm);
+              const avgValues=summary.map(x=>x.average).filter(Boolean);
+              const classAvg=avgValues.length?avg(avgValues):0;
+              return (
+                <div className="insight-grid teacher-insights">
+                  <Card className="insight-card" style={{display:"flex",alignItems:"center",gap:16}}>
+                    <ProgressRing value={enc.percent||0} label="Encoded"/>
+                    <div>
+                      <div className="insight-kicker">CLASS READINESS</div>
+                      <div className="insight-value">{enc.percent||0}%</div>
+                      <div className="insight-note">{enc.encoded||0} of {enc.total||0} grade entries encoded</div>
+                    </div>
+                  </Card>
+                  <Card className="insight-card">
+                    <div className="insight-kicker">CLASS AVERAGE</div>
+                    <div className="insight-value">{classAvg?Math.round(classAvg*100)/100:"—"}</div>
+                    <div className="insight-note">Based on {summaryTerm==="final"?"final":`Term ${summaryTerm}`} records</div>
+                    {avgValues.length>0&&<MiniBarChart
+                      data={[
+                        {label:"90+",value:avgValues.filter(v=>v>=90).length},
+                        {label:"85–89",value:avgValues.filter(v=>v>=85&&v<90).length},
+                        {label:"80–84",value:avgValues.filter(v=>v>=80&&v<85).length},
+                        {label:"<80",value:avgValues.filter(v=>v<80).length}
+                      ]}
+                      label="Learners by average band"
+                    />}
+                  </Card>
+                </div>
+              );
+            })()}
 
             <Card style={{marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -2571,6 +2739,8 @@ const TeacherDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+          </div>
+        </div>
       </div>
       <BottomNav tabs={tabs} active={tab} setActive={setTab}/>
     </div>
@@ -3072,6 +3242,13 @@ const AdminDashboard = ({ profile, onLogout }) => {
       <SchoolHeader small/>
       <TopBar name="Admin Panel" sub={profile.name} onLogout={onLogout}/>
       <Toast msg={toast}/>
+      <div className="admin-welcome-wrap">
+        <WelcomePanel profile={profile} role="admin" stats={[
+          {icon:"🎓",value:students.length,label:"Learners"},
+          {icon:"👨‍🏫",value:teachers.length,label:"Teachers"},
+          {icon:"🏫",value:sections.length,label:"Sections"}
+        ]}/>
+      </div>
 
       {resetModal&&(
         <ResetPasswordModal user={resetModal}
@@ -3114,21 +3291,42 @@ const AdminDashboard = ({ profile, onLogout }) => {
         </div>
       )}
 
-      <div className="animate-fade-in" style={{flex:1,overflowY:"auto",padding:14,paddingBottom:72}}>
+      <div className="dashboard-scroll">
+        <div className="dashboard-inner">
+          <div key={tab} className="tab-scene">
 
         {tab==="overview"&&(
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:12}}>
               🏫 Overview — S.Y. 2026–2027
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div className="kpi-grid">
               {stats.map(s=>(
-                <Card key={s.label} style={{textAlign:"center",padding:14}}>
-                  <div style={{fontSize:26}}>{s.icon}</div>
-                  <div style={{fontSize:32,fontWeight:900,color:s.color}}>{s.value}</div>
-                  <div style={{fontSize:11,color:T.textMuted}}>{s.label}</div>
+                <Card key={s.label} className="kpi-card">
+                  <div className="kpi-icon" style={{background:`${s.color}18`}}>{s.icon}</div>
+                  <div><div className="kpi-value" style={{color:s.color}}>{s.value}</div>
+                  <div className="kpi-label">{s.label}</div></div>
                 </Card>
               ))}
+            </div>
+
+            <div className="insight-grid admin-insights">
+              <Card className="insight-card">
+                <div className="insight-kicker">ENROLLMENT DISTRIBUTION</div>
+                <MiniBarChart
+                  data={GRADE_LEVELS.map(g=>({label:`G${g}`,value:students.filter(s=>s.grade_level===g).length}))}
+                  label="Learners per grade level"
+                />
+              </Card>
+              <Card className="insight-card">
+                <div className="insight-kicker">SCHOOL STRUCTURE</div>
+                <div className="structure-list">
+                  <div><span>Sections</span><strong>{sections.length}</strong></div>
+                  <div><span>Teachers</span><strong>{teachers.length}</strong></div>
+                  <div><span>Subjects</span><strong>{subjects.filter(s=>!s.parent_subject_id).length}</strong></div>
+                  <div><span>Pending appointments</span><strong>{appointments.filter(a=>a.status==="Pending").length}</strong></div>
+                </div>
+              </Card>
             </div>
 
             <div style={{fontSize:14,fontWeight:700,color:T.green1,margin:"18px 0 10px"}}>
@@ -3781,6 +3979,8 @@ const AdminDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+          </div>
+        </div>
       </div>
 
       <BottomNav
@@ -3797,6 +3997,79 @@ const AdminDashboard = ({ profile, onLogout }) => {
 };
 
 // ─── MAIN APP ────────────────────────────────────────────
+// v2.3 mobile-first experience: connection awareness, touch feedback,
+// pull-to-refresh and an unobtrusive native-app status surface.
+const MobileExperienceLayer = () => {
+  const [online,setOnline]=useState(navigator.onLine);
+  const [refreshing,setRefreshing]=useState(false);
+
+  useEffect(()=>{
+    const on=()=>setOnline(true), off=()=>setOnline(false);
+    window.addEventListener("online",on); window.addEventListener("offline",off);
+    return ()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);};
+  },[]);
+
+  useEffect(()=>{
+    let touchStart=0;
+    const down=e=>{
+      if(window.scrollY<=2) touchStart=e.touches[0].clientY;
+    };
+    const up=async e=>{
+      const end=e.changedTouches?.[0]?.clientY||0;
+      if(window.scrollY<=2 && touchStart && end-touchStart>95 && !refreshing){
+        setRefreshing(true);
+        window.setTimeout(()=>window.location.reload(),350);
+      }
+      touchStart=0;
+    };
+    window.addEventListener("touchstart",down,{passive:true});
+    window.addEventListener("touchend",up,{passive:true});
+    return ()=>{window.removeEventListener("touchstart",down);window.removeEventListener("touchend",up);};
+  },[refreshing]);
+
+  return <>
+    {!online && <div className="connection-banner" role="status">⚠️ You're offline. Saved information will remain available where supported.</div>}
+    {refreshing && <div className="refresh-indicator" role="status"><span>↻</span> Refreshing AGRIANS…</div>}
+    <div className={`mobile-status-pill ${online?'is-online':'is-offline'}`} aria-label={online?'Online':'Offline'}>
+      <span className="status-pulse"/>{online?'Online':'Offline'}
+    </div>
+  </>;
+};
+
+const InstallAppPrompt = () => {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [show, setShow] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone;
+    setIsStandalone(Boolean(standalone));
+    const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); setShow(true); };
+    window.addEventListener('beforeinstallprompt', handler);
+    const installed = () => setShow(false);
+    window.addEventListener('appinstalled', installed);
+    return () => { window.removeEventListener('beforeinstallprompt', handler); window.removeEventListener('appinstalled', installed); };
+  }, []);
+
+  if (isStandalone || !show) return null;
+  return (
+    <div className="install-app-prompt" role="dialog" aria-label="Install AGRIANS">
+      <div className="install-app-icon">🌱</div>
+      <div className="install-app-copy">
+        <strong>Install AGRIANS</strong>
+        <span>Use AGRIANS like an Android app — faster access from your home screen.</span>
+      </div>
+      <button className="install-app-btn" onClick={async()=>{
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        setDeferredPrompt(null); setShow(false);
+      }}>Install</button>
+      <button className="install-app-close" aria-label="Dismiss" onClick={()=>setShow(false)}>×</button>
+    </div>
+  );
+};
+
 export default function App() {
   const [session,setSession]=useState(null);
   const [profile,setProfile]=useState(null);
@@ -3823,6 +4096,8 @@ export default function App() {
   return (
     <>
       <style>{css}</style>
+      <MobileExperienceLayer />
+      <InstallAppPrompt />
       {loading?<Spinner/>
         :!session||!profile?<Login/>
         :profile.role==="student"?<StudentDashboard profile={profile} onLogout={handleLogout}/>
