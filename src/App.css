@@ -1447,3 +1447,123 @@ button { touch-action: manipulation; }
   .card:hover{transform:none!important;box-shadow:var(--shadow-sm)!important;}
   .btn:active,.sidebar-link:active{transform:scale(.97);}
 }
+
+
+/* ─────────────────────────────────────────────────────────────
+   DASIG, AGRIAN! — animated learner companion
+   ───────────────────────────────────────────────────────────── */
+.agrian-mascot-card{
+  position:relative;display:grid;grid-template-columns:132px 1fr;gap:14px;
+  align-items:center;overflow:hidden;margin:0 0 12px;padding:12px 15px;
+  border:1px solid #CFE5D4;background:linear-gradient(120deg,#f8fff8,#ffffff 58%,#fff9e8);
+  box-shadow:0 10px 28px rgba(31,70,56,.10);isolation:isolate;
+}
+.agrian-mascot-card.honor{border-color:#f4d37b;background:linear-gradient(120deg,#fffdf3,#ffffff 55%,#fff6c9)}
+.agrian-mascot-card.almost{border-color:#b9dfc4}
+.agrian-mascot-glow{position:absolute;width:190px;height:190px;border-radius:50%;left:-45px;top:-65px;background:#8fc49a22;filter:blur(3px);z-index:-1;animation:mascotGlow 4s ease-in-out infinite}
+.agrian-mascot-stage{height:112px;position:relative;display:grid;place-items:center}
+.agrian-mascot{width:126px;height:126px;object-fit:cover;object-position:center top;border-radius:42% 42% 48% 48%;filter:drop-shadow(0 8px 8px rgba(31,70,56,.18));animation:mascotFloat 3.2s ease-in-out infinite;mix-blend-mode:multiply}
+.agrian-mascot.mascot-pop{animation:mascotPop .65s cubic-bezier(.2,1.5,.35,1),mascotFloat 3.2s .65s ease-in-out infinite}
+.mascot-leaf{position:absolute;font-size:18px;animation:leafDrift 3s ease-in-out infinite}
+.mascot-leaf-a{left:4px;top:12px}.mascot-leaf-b{right:3px;bottom:7px;animation-delay:.8s}
+.agrian-mascot-message{min-width:0}
+.mascot-eyebrow{font-size:9px;letter-spacing:1.15px;font-weight:900;color:#3e8a63;margin-bottom:4px}
+.mascot-eyebrow span{color:#f59e0b}
+.mascot-title{font-size:18px;line-height:1.15;font-weight:950;color:#1f4638;margin-bottom:5px}
+.honor .mascot-title{color:#a16207}
+.mascot-quote{font-size:11px;line-height:1.55;color:#475569;max-width:640px}
+.mascot-progress{margin-top:8px;display:grid;grid-template-columns:1fr auto;gap:4px;font-size:9px;color:#64748b}
+.mascot-progress b{color:#2f6b4c}.mascot-progress div{grid-column:1/-1;height:6px;background:#e7efe9;border-radius:99px;overflow:hidden}
+.mascot-progress i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#3e8a63,#f5c842);transition:width .7s ease}
+.mascot-sparkles{position:absolute;right:12px;top:8px;color:#f5c842;letter-spacing:6px;font-size:10px;animation:sparklePulse 2.2s ease-in-out infinite}
+.agrian-mascot-card.compact{grid-template-columns:84px 1fr;padding:8px 10px}
+.agrian-mascot-card.compact .agrian-mascot-stage{height:78px}
+.agrian-mascot-card.compact .agrian-mascot{width:88px;height:88px}
+.agrian-mascot-card.compact .mascot-title{font-size:14px}
+@keyframes mascotFloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}
+@keyframes mascotPop{0%{transform:scale(.55) rotate(-8deg);opacity:.2}70%{transform:scale(1.08) rotate(3deg);opacity:1}100%{transform:scale(1) rotate(0)}}
+@keyframes mascotGlow{0%,100%{transform:scale(.92);opacity:.55}50%{transform:scale(1.12);opacity:1}}
+@keyframes leafDrift{0%,100%{transform:translate(0,0) rotate(-8deg)}50%{transform:translate(5px,-6px) rotate(12deg)}}
+@keyframes sparklePulse{0%,100%{opacity:.35;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}}
+@media(max-width:640px){
+  .agrian-mascot-card{grid-template-columns:94px 1fr;gap:8px;padding:10px}
+  .agrian-mascot-stage{height:94px}.agrian-mascot{width:102px;height:102px}
+  .mascot-title{font-size:15px}.mascot-quote{font-size:10.5px}.mascot-eyebrow{font-size:8px}
+}
+@media(prefers-reduced-motion:reduce){
+  .agrian-mascot,.agrian-mascot-glow,.mascot-leaf,.mascot-sparkles{animation:none!important}
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DASIG CORNER — personal, animated student companion
+   ───────────────────────────────────────────────────────────── */
+.dasig-companion{
+  position:relative;display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:center;
+  overflow:hidden;margin:0 0 14px;padding:14px 18px;border:1px solid #cfe5d4;border-radius:var(--radius-lg,18px);
+  background:linear-gradient(135deg,#f8fff9 0%,#fff 52%,#fff8df 100%);
+  box-shadow:0 14px 34px rgba(31,70,56,.12);isolation:isolate;
+}
+.dasig-companion-bg{position:absolute;inset:0;z-index:-2;background:
+  radial-gradient(circle at 10% 15%,#8fc49a30,transparent 25%),
+  radial-gradient(circle at 92% 82%,#f5c8422b,transparent 24%);pointer-events:none}
+.dasig-companion.honor{border-color:#e7c45e;background:linear-gradient(135deg,#fffdf0,#fff,#fff5c8)}
+.dasig-companion.almost{border-color:#b9dfc4}
+.dasig-companion-art{position:relative;height:190px;display:grid;place-items:end center}
+.dasig-companion-mascot{width:205px;height:205px;object-fit:cover;object-position:center top;border-radius:45% 45% 35% 35%;
+  filter:drop-shadow(0 12px 10px rgba(31,70,56,.20));mix-blend-mode:multiply;animation:dasigBuddyFloat 3.5s ease-in-out infinite}
+.dasig-speech{position:absolute;z-index:2;right:0;top:2px;max-width:160px;padding:8px 11px;border:2px solid #2f6b4c;border-radius:16px 16px 4px 16px;background:#fff;color:#1f4638;font-size:10px;line-height:1.35;font-weight:800;box-shadow:0 7px 18px #1f46381c;animation:dasigSpeechIn .55s ease both}
+.dasig-orbit{position:absolute;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#fff;box-shadow:0 6px 15px #1f463820;font-size:17px;animation:dasigOrbit 4s ease-in-out infinite}
+.dasig-orbit-a{left:6px;bottom:35px}.dasig-orbit-b{right:15px;bottom:16px;animation-delay:1.2s}
+.dasig-companion-body{min-width:0}.dasig-kicker{font-size:9px;letter-spacing:1.2px;font-weight:950;color:#3e8a63;margin-bottom:5px}.dasig-kicker span{color:#f59e0b}
+.dasig-companion h2{font-size:21px;line-height:1.15;color:#1f4638;margin-bottom:6px;letter-spacing:-.4px}.dasig-companion.honor h2{color:#9a6700}
+.dasig-main-quote{font-size:12px;line-height:1.55;color:#475569;margin-bottom:8px;max-width:720px}
+.dasig-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.dasig-chip-row span{font-size:9px;font-weight:800;color:#2f6b4c;background:#eef6ec;border:1px solid #d5e8d9;padding:5px 8px;border-radius:999px}
+.dasig-goal{display:grid;grid-template-columns:1fr;gap:5px;margin-bottom:8px}.dasig-goal b{display:block;font-size:10px;color:#1f4638}.dasig-goal small{display:block;font-size:9px;color:#64748b;margin-top:2px}.dasig-goal-track{height:7px;background:#e6eee8;border-radius:99px;overflow:hidden}.dasig-goal-track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#3e8a63,#f5c842);transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.dasig-achievement-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}.dasig-mini-achievement{display:flex;align-items:center;gap:4px;padding:4px 7px;background:#ffffffc9;border:1px solid #dce9df;border-radius:9px;color:#2f6b4c}.dasig-mini-achievement span{font-size:14px}.dasig-mini-achievement b{font-size:8.5px}
+.dasig-actions{display:flex;gap:7px;flex-wrap:wrap}.dasig-actions button{padding:8px 10px;font-size:10px;color:#fff;background:#2f6b4c;border-radius:9px;box-shadow:0 5px 12px #2f6b4c24}.dasig-actions button+button{color:#2f6b4c;background:#eef6ec;box-shadow:none;border:1px solid #d5e8d9}.dasig-actions button:hover{transform:translateY(-1px)}
+.dasig-confetti{position:absolute;inset:0;z-index:5;display:flex;justify-content:space-around;align-items:flex-start;padding-top:5px;color:#f5c842;font-size:16px;letter-spacing:15px;pointer-events:none;animation:dasigConfetti 4.2s ease-out forwards}
+
+.dasig-corner{animation:dasigPageIn .35s ease both}.dasig-quote-card{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:16px;background:linear-gradient(135deg,#eff9f0,#fff);border:1px solid #d4e8d8;margin-bottom:12px}.dasig-quote-mascot{height:120px;overflow:hidden;border-radius:22px;background:#eef6ec;display:grid;place-items:center}.dasig-quote-mascot img{width:150px;height:150px;object-fit:cover;object-position:center top;mix-blend-mode:multiply}.dasig-quote-card h3{font-size:18px;color:#1f4638;line-height:1.3;margin-bottom:7px}.dasig-quote-card p{font-size:11px;color:#64748b;line-height:1.55;max-width:700px}
+.dasig-corner-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.dasig-panel-title{font-size:12px;font-weight:900;color:#1f4638;margin-bottom:10px}.dasig-badge-row{display:flex;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid #e7efe9}.dasig-badge-row:last-child{border-bottom:0}.dasig-badge-row>span{font-size:23px}.dasig-badge-row b{display:block;font-size:11px;color:#2f6b4c}.dasig-badge-row small{display:block;font-size:9px;color:#64748b;margin-top:2px;line-height:1.35}.dasig-goal-large{display:flex;align-items:center;gap:15px}.dasig-goal-large>b{font-size:12px;color:#1f4638}.dasig-goal-large p{font-size:10px;color:#64748b;line-height:1.45;margin-top:5px}
+.dasig-source-flow{display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap}.dasig-source-flow span{font-size:10px;font-weight:800;color:#2f6b4c;background:#eef6ec;border:1px solid #d5e8d9;padding:7px 9px;border-radius:9px}.dasig-source-flow i{font-style:normal;color:#f59e0b;font-weight:900}.dasig-source-note{font-size:9px;color:#64748b;text-align:center;margin-top:9px}.dasig-quote-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.dasig-quote-tile{display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid #dce9df;background:#fff;border-radius:12px;box-shadow:0 5px 15px #1f46380a}.dasig-quote-tile span{font-size:18px}.dasig-quote-tile p{font-size:9px;line-height:1.5;color:#475569}
+@keyframes dasigBuddyFloat{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-8px) rotate(1deg)}}
+@keyframes dasigSpeechIn{0%{opacity:0;transform:translateY(6px) scale(.92)}100%{opacity:1;transform:none}}
+@keyframes dasigOrbit{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-8px) rotate(7deg)}}
+@keyframes dasigConfetti{0%{opacity:0;transform:translateY(-20px)}12%{opacity:1}100%{opacity:0;transform:translateY(130px) rotate(8deg)}}
+@keyframes dasigPageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:720px){
+ .dasig-companion{grid-template-columns:115px 1fr;gap:10px;padding:10px}.dasig-companion-art{height:155px}.dasig-companion-mascot{width:145px;height:145px}.dasig-speech{right:-2px;max-width:120px;font-size:8px;padding:6px 8px}.dasig-companion h2{font-size:16px}.dasig-main-quote{font-size:10px}.dasig-corner-grid{grid-template-columns:1fr}.dasig-quote-grid{grid-template-columns:1fr 1fr}.dasig-quote-card{grid-template-columns:90px 1fr}.dasig-quote-mascot{height:90px}.dasig-quote-mascot img{width:115px;height:115px}.dasig-goal-large{align-items:flex-start}
+}
+@media(max-width:460px){.dasig-companion{grid-template-columns:1fr}.dasig-companion-art{height:130px}.dasig-companion-mascot{width:130px;height:130px}.dasig-speech{right:10%;top:0}.dasig-achievement-row{display:none}.dasig-quote-grid{grid-template-columns:1fr}.dasig-source-flow span{font-size:9px}.dasig-source-flow i{display:none}}
+@media(prefers-reduced-motion:reduce){.dasig-companion-mascot,.dasig-orbit,.dasig-confetti,.dasig-speech,.dasig-corner{animation:none!important}.dasig-actions button{transition:none}}
+
+/* ── DASIG journey memory ───────────────────────────────────────────── */
+.dasig-journey-card{margin-top:12px;background:linear-gradient(135deg,#fbfff9,#fff);border:1px solid #dce9df}
+.dasig-journey-stages{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:10px 0 13px;position:relative}
+.dasig-journey-stages:before{content:'';position:absolute;left:7%;right:7%;top:19px;height:3px;background:#e6eee8;border-radius:99px;z-index:0}
+.dasig-journey-stage{position:relative;z-index:1;text-align:center;color:#a2b2a7;opacity:.62;transition:transform .25s ease,opacity .25s ease}
+.dasig-journey-stage span{display:grid;place-items:center;width:38px;height:38px;margin:0 auto 4px;border-radius:50%;background:#f2f6f2;border:2px solid #dfe9e1;font-size:18px;box-shadow:0 3px 8px #1f46380b}
+.dasig-journey-stage small{font-size:8px;font-weight:800;white-space:nowrap}
+.dasig-journey-stage.reached{opacity:1;color:#2f6b4c}
+.dasig-journey-stage.reached span{background:#eef8ef;border-color:#b9ddc0}
+.dasig-journey-stage.current{transform:translateY(-3px)}
+.dasig-journey-stage.current span{box-shadow:0 0 0 5px #5ca37d18,0 8px 18px #2f6b4c1c;border-color:#5ca37d;animation:dasigStagePulse 2.4s ease-in-out infinite}
+.dasig-journey-timeline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.dasig-journey-event{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid #e4eee5;background:#fff;border-radius:10px}
+.dasig-journey-event-icon{font-size:17px;line-height:1}
+.dasig-journey-event b{display:block;font-size:9px;color:#2f6b4c}
+.dasig-journey-event small{display:block;font-size:8.5px;line-height:1.35;color:#64748b;margin-top:2px}
+.dasig-journey-event time{display:block;font-size:7.5px;color:#9aa9a0;margin-top:4px}
+.dasig-journey-footer{margin-top:9px;padding-top:8px;border-top:1px dashed #dce9df;font-size:8.5px;line-height:1.45;color:#718279;text-align:center}
+@keyframes dasigStagePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@media(max-width:560px){.dasig-journey-timeline{grid-template-columns:1fr}.dasig-journey-stage small{font-size:7px}.dasig-journey-stage span{width:33px;height:33px;font-size:16px}.dasig-journey-stages:before{top:16px}}
+@media(prefers-reduced-motion:reduce){.dasig-journey-stage,.dasig-journey-stage.current span{animation:none!important;transition:none!important}}
+
+/* ── DASIG v3: cloud memory / growth passport ───────────── */
+.dasig-journey-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.dasig-memory-status{display:block;margin-top:2px;font-size:8px;color:#718279;line-height:1.35}
+.dasig-passport-stats{display:flex;gap:6px;flex-shrink:0}
+.dasig-passport-stats span{min-width:58px;padding:6px 7px;text-align:center;border:1px solid #e1ece3;border-radius:10px;background:#f8fcf8}
+.dasig-passport-stats b{display:block;font-size:12px;color:#2f6b4c;line-height:1.1}
+.dasig-passport-stats small{display:block;font-size:7px;color:#829088;margin-top:2px}
+@media(max-width:560px){.dasig-journey-head{align-items:stretch}.dasig-passport-stats{display:none}}

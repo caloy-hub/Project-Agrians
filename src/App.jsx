@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import agriansLogo from "./agrians-logo.png";
 import mcpbahsLogo from "./mcpbahs-logo.png";
+import dasigAgrianMascot from "./dasig-agrian-mascot-clean.png";
 import "./App.css";
 
 const GRADE_LEVELS = [7, 8, 9, 10, 11, 12];
@@ -51,6 +52,69 @@ const schoolDaysInMonth = (tm, holidays=[]) => {
     out.push({date:iso, day:d, dow});
   }
   return out;
+};
+
+
+// ─────────────────────────────────────────────────────────────
+// ONE CALCULATION SOURCE — attendance engine
+// Calendar → Daily Attendance → SF2 → SF4 → Learner Dashboard
+// Keep attendance math here. Reports and learner-facing summaries should
+// consume these normalized values instead of maintaining separate formulas.
+// ─────────────────────────────────────────────────────────────
+const attendanceEngine = {
+  dates: (tm, holidays=[]) => schoolDaysInMonth(tm, holidays),
+  configuredDays: (tm, calendar, holidays=[]) => {
+    const cal = calendar.find(c=>c.month===tm.month&&c.year===tm.year&&c.term===tm.term);
+    // The date grid is the canonical calendar. A configured value is retained
+    // for official reporting only when it agrees with the actual school dates.
+    const actual = schoolDaysInMonth(tm, holidays).length;
+    const configured = cal?.school_days!=null ? Number(cal.school_days) : actual;
+    return { actual, configured, agreed: configured===actual, days: schoolDaysInMonth(tm, holidays) };
+  },
+  studentMonth: (tm, calendar, holidays, rows=[]) => {
+    const source = attendanceEngine.configuredDays(tm, calendar, holidays);
+    const statusByDate = new Map(rows.filter(r=>source.days.some(d=>d.date===r.date)).map(r=>[r.date,r.status]));
+    const encoded = rows.length>0;
+    const present = encoded ? source.days.filter(d=>statusByDate.get(d.date)!=="absent").length : 0;
+    const totalDays = Math.max(0, source.agreed ? source.actual : source.configured);
+    const totalPresent = Math.min(present,totalDays);
+    const absent = Math.max(0,totalDays-totalPresent);
+    return { ...source, totalDays, totalPresent, absent,
+      pct: totalDays ? Math.round(totalPresent/totalDays*100) : 0, encoded };
+  },
+  term: (term, calendar, holidays, rows=[]) => {
+    const monthly=TERM_MONTHS.filter(m=>m.term===term).map(m=>{
+      const relevant=rows.filter(r=>attendanceEngine.dates(m,holidays).some(d=>d.date===r.date));
+      return attendanceEngine.studentMonth(m,calendar,holidays,relevant);
+    }).filter(m=>m.encoded).reduce((acc,m)=>({
+      totalDays:acc.totalDays+m.totalDays,
+      totalPresent:acc.totalPresent+m.totalPresent,
+      absent:acc.absent+m.absent
+    }),{totalDays:0,totalPresent:0,absent:0});
+    return {...monthly,pct:monthly.totalDays?Math.round(monthly.totalPresent/monthly.totalDays*100):0};
+  },
+  learnerStatus: (average, previousAverage=null) => {
+    if (average==null) return {
+      key:"welcome", title:"I'm waiting for you, Agrian!", emoji:"🌱",
+      quote:"Every great journey starts with one small step. Let's grow together!"
+    };
+    if (average>=90) return {
+      key:"honor", title:"Congratulations, Honor Agrian!", emoji:"🏆",
+      quote:"You planted the seeds. You nurtured them. Now celebrate your harvest!"
+    };
+    if (average>=88) return {
+      key:"almost", title:"Almost There, Agrian!", emoji:"🌟",
+      quote:"You're so close! Keep your focus, stay consistent, and Dasig, Agrian!"
+    };
+    if (previousAverage!=null && average>previousAverage) return {
+      key:"rising", title:"You're Growing!", emoji:"🌱",
+      quote:"Look at that progress! Small improvements grow into big achievements."
+    };
+    return {
+      key:"encourage", title:"Keep Going, Agrian!", emoji:"💚",
+      quote:"Don't compare your chapter to someone else's. Keep planting good seeds!"
+    };
+  }
 };
 
 // Design tokens — harmonized with src/index.css / src/App.css (green & slate
@@ -1206,6 +1270,225 @@ const StudentCard = ({ student:s, sections, showActions, onDelete, onReset, onRe
 };
 
 // ─── SCHOOL CALENDAR PANEL (fixed — no hooks in map) ────
+
+
+const DASIG_QUOTES = [
+  "Small steps lead to big dreams. Keep going, Agrian!",
+  "Discipline today becomes success tomorrow. Dasig!",
+  "Plant the seeds of greatness through your daily effort.",
+  "Your future is growing from what you do today.",
+  "Progress is progress—even one point higher is worth celebrating!",
+  "You do not have to be perfect. You just have to keep growing.",
+  "Believe in yourself, Agrian. Your hard work has a purpose.",
+  "Every school day is another chance to grow, learn, and shine.",
+  "Keep your roots strong, your goals clear, and your heart brave.",
+  "Dasig, Agrian! Your little improvements are becoming a big harvest."
+];
+
+const getDasigDailyQuote = (seed="agrian") => {
+  const day=Math.floor(Date.now()/86400000);
+  let hash=0;
+  for (const ch of String(seed)) hash=(hash*31+ch.charCodeAt(0))>>>0;
+  return DASIG_QUOTES[(day+hash)%DASIG_QUOTES.length];
+};
+
+const getBirthdayMessage = birthday => {
+  if (!birthday) return null;
+  const value=String(birthday).slice(0,10);
+  const parts=value.split("-").map(Number);
+  if (parts.length!==3 || !parts[1] || !parts[2]) return null;
+  const now=new Date();
+  return parts[1]===now.getMonth()+1 && parts[2]===now.getDate()
+    ? "Happy Birthday, Agrian! May this new year of your life bring you more learning, laughter, and wonderful harvests! 🎂🌱"
+    : null;
+};
+
+const buildDasigAchievements = ({ average, attendancePct, termAverage, previousAverage }) => {
+  const items=[];
+  if (average!=null && average>=90) items.push({icon:"🏆",title:"Honor Agrian",text:"Your current academic average is at or above 90."});
+  else if (termAverage!=null && termAverage>=88) items.push({icon:"🌟",title:"Almost Honor",text:"You are within reach of the 90 honor benchmark."});
+  if (attendancePct!=null && attendancePct>=95) items.push({icon:"🗓️",title:"Attendance Hero",text:"95%+ attendance shows strong consistency."});
+  if (previousAverage!=null && termAverage!=null && termAverage>previousAverage) items.push({icon:"📈",title:"Growing Agrian",text:`Your latest term is up ${Math.round((termAverage-previousAverage)*10)/10} points.`});
+  if (!items.length) items.push({icon:"🌱",title:"Keep Planting",text:"Every completed activity and every school day moves you forward."});
+  return items.slice(0,3);
+};
+
+const DASIG_JOURNEY_KEY = profileId => `mcpbahs:dasig-journey:${profileId}`;
+
+const loadDasigJourneyLocal = profileId => {
+  try {
+    const raw = localStorage.getItem(DASIG_JOURNEY_KEY(profileId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
+
+const saveDasigJourneyLocal = (profileId, events) => {
+  try { localStorage.setItem(DASIG_JOURNEY_KEY(profileId), JSON.stringify(events.slice(0, 36))); }
+  catch { /* DASIG still works if browser storage is unavailable */ }
+};
+
+const journeyEvent = (key, title, text, icon, metadata={}) => ({
+  key, title, text, icon, metadata, at: new Date().toISOString()
+});
+
+// Cloud memory is the durable source for DASIG milestones. Local storage is
+// retained as a graceful offline fallback so the companion never feels empty.
+const loadDasigJourneyCloud = async profileId => {
+  if (!profileId) return [];
+  const {data,error}=await supabase.from("dasig_journey_events")
+    .select("event_key,title,body,icon,metadata,created_at")
+    .eq("student_id",profileId)
+    .order("created_at",{ascending:false})
+    .limit(36);
+  if (error) throw error;
+  return (data||[]).map(e=>({key:e.event_key,title:e.title,text:e.body,icon:e.icon,metadata:e.metadata||{},at:e.created_at}));
+};
+
+const saveDasigJourneyCloud = async (profileId, events) => {
+  if (!profileId || !events?.length) return;
+  const rows=events.slice(0,36).map(e=>({
+    student_id:profileId,event_key:e.key,title:e.title,body:e.text,icon:e.icon,
+    metadata:e.metadata||{},created_at:e.at||new Date().toISOString()
+  }));
+  const {error}=await supabase.from("dasig_journey_events").upsert(rows,{onConflict:"student_id,event_key"});
+  if (error) throw error;
+};
+
+const DasigJourney = ({ profile, termAverages, average, attendancePct, currentStatus }) => {
+  const [events,setEvents]=useState(()=>loadDasigJourneyLocal(profile?.id));
+  const [memoryState,setMemoryState]=useState("local");
+  const termSignature=termAverages.join('|');
+
+  useEffect(()=>{
+    let cancelled=false;
+    if (!profile?.id) return undefined;
+    (async()=>{
+      try {
+        const cloud=await loadDasigJourneyCloud(profile.id);
+        if (!cancelled && cloud.length) {
+          setEvents(cloud);
+          saveDasigJourneyLocal(profile.id,cloud);
+        }
+        if (!cancelled) setMemoryState("cloud");
+      } catch {
+        if (!cancelled) setMemoryState("local");
+      }
+    })();
+    return ()=>{cancelled=true;};
+  },[profile?.id]);
+
+  useEffect(()=>{
+    if (!profile?.id) return;
+    const existing=events.length?events:loadDasigJourneyLocal(profile.id);
+    const next=[...existing];
+    const add=(key,title,text,icon,metadata={})=>{
+      if (!next.some(e=>e.key===key)) next.unshift(journeyEvent(key,title,text,icon,metadata));
+    };
+    add('first-login','Your journey began','DASIG is keeping a lasting record of your growth milestones.','🌱',{stage:'seedling'});
+    if (average!=null && average>=90) add('honor-reached','Honor Agrian','You reached the 90+ academic benchmark. What a harvest!','🏆',{average});
+    if (average!=null && average>=88 && average<90) add('almost-honor','Almost Honor','You entered the 88–89.99 range. You are getting close!','🌟',{average});
+    if (attendancePct!=null && attendancePct>=95) add('attendance-hero','Attendance Hero','Your attendance reached 95% or higher. Consistency matters!','🗓️',{attendancePct});
+    const completedTerms=termAverages.filter(v=>v!=null);
+    if (completedTerms.length>=2 && completedTerms[completedTerms.length-1]>completedTerms[completedTerms.length-2]) {
+      const key=`growth-term-${completedTerms.length}`;
+      add(key,`Term ${completedTerms.length} growth`,`Your latest recorded term improved over the previous one.`,`📈`,{from:completedTerms[completedTerms.length-2],to:completedTerms[completedTerms.length-1]});
+    }
+    if (currentStatus==='rising') add('rising-now','Growing Agrian','DASIG noticed that your latest academic result is moving upward.','🌿',{average});
+    const changed=JSON.stringify(next)!==JSON.stringify(existing);
+    if (!changed) return;
+    saveDasigJourneyLocal(profile.id,next);
+    setEvents(next);
+    // Persist in the background. If RLS/network prevents it, local memory remains usable.
+    saveDasigJourneyCloud(profile.id,next).catch(()=>{});
+  },[profile?.id,average,attendancePct,currentStatus,termSignature]);
+
+  const milestoneMap = {
+    seedling:{icon:'🌱',label:'Seedling'}, growing:{icon:'🌿',label:'Growing'},
+    rising:{icon:'📈',label:'Rising Star'}, almost:{icon:'🌟',label:'Almost Honor'}, honor:{icon:'🏆',label:'Honor Agrian'}
+  };
+  const stage = currentStatus==='honor' ? 'honor' : currentStatus==='almost' ? 'almost' : currentStatus==='rising' ? 'rising' : (average!=null ? 'growing' : 'seedling');
+  const stages=['seedling','growing','rising','almost','honor'];
+  const stageIndex=stages.indexOf(stage);
+  const bestAverage=Math.max(...events.map(e=>Number(e.metadata?.average)||0),Number(average)||0);
+  const milestoneCount=events.filter(e=>e.key!=='first-login').length;
+
+  return <Card className="dasig-journey-card">
+    <div className="dasig-journey-head">
+      <div><div className="dasig-panel-title">🌾 My Agrian Journey</div><small className="dasig-memory-status">{memoryState==='cloud'?'☁️ DASIG memory synced to your account':'📱 DASIG memory is available on this device'}</small></div>
+      <div className="dasig-passport-stats"><span><b>{milestoneCount}</b><small>milestones</small></span><span><b>{bestAverage?bestAverage.toFixed(2):'—'}</b><small>best avg.</small></span></div>
+    </div>
+    <div className="dasig-journey-stages">
+      {stages.map((key,i)=>{const m=milestoneMap[key];return <div key={key} className={`dasig-journey-stage ${i<=stageIndex?'reached':''} ${key===stage?'current':''}`}><span>{m.icon}</span><small>{m.label}</small></div>;})}
+    </div>
+    <div className="dasig-journey-timeline">
+      {events.slice(0,6).map(e=><div className="dasig-journey-event" key={e.key}><span className="dasig-journey-event-icon">{e.icon}</span><div><b>{e.title}</b><small>{e.text}</small><time>{new Date(e.at).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</time></div></div>)}
+    </div>
+    <div className="dasig-journey-footer">DASIG remembers your milestones with your student account, so your journey can follow you to another device. Official grades and attendance remain separate school records.</div>
+  </Card>;
+};
+
+const AgrianCompanion = ({ profile, average, termAverage, previousAverage=null, attendancePct=null, onOpenDasig }) => {
+  const birthdayMessage=getBirthdayMessage(profile?.birthday);
+  const statusAverage=termAverage ?? average;
+  const status=attendanceEngine.learnerStatus(statusAverage,previousAverage);
+  const [quote,setQuote]=useState(()=>getDasigDailyQuote(profile?.id||profile?.name));
+  const [celebrate,setCelebrate]=useState(status.key==="honor"||status.key==="almost");
+
+  useEffect(()=>{ setQuote(getDasigDailyQuote(profile?.id||profile?.name)); },[profile?.id,profile?.name]);
+  useEffect(()=>{
+    if (status.key==="honor"||status.key==="almost") {
+      setCelebrate(true);
+      const timer=setTimeout(()=>setCelebrate(false),4200);
+      return ()=>clearTimeout(timer);
+    }
+    setCelebrate(false);
+  },[status.key]);
+
+  const achievements=buildDasigAchievements({average,attendancePct,termAverage,previousAverage});
+  const honorGap=statusAverage==null?10:Math.max(0,90-statusAverage);
+  const attendanceNote=attendancePct==null
+    ?"Let's build a strong attendance habit."
+    :attendancePct>=95
+      ?"Amazing consistency! Keep showing up."
+      :attendancePct>=90
+        ?"You're doing well—protect that attendance streak!"
+        :"Let's work on being present more often. Every school day counts.";
+
+  return (
+    <section className={`dasig-companion ${status.key}`}>
+      <div className="dasig-companion-bg"/>
+      {celebrate&&<div className="dasig-confetti" aria-hidden="true">✦ ✧ ✦ ✧ ✦ ✧ ✦</div>}
+      <div className="dasig-companion-art">
+        <div className="dasig-speech">{birthdayMessage||status.title}</div>
+        <img src={dasigAgrianMascot} alt="DASIG Agrian study buddy" className="dasig-companion-mascot"/>
+        <span className="dasig-orbit dasig-orbit-a">🌱</span>
+        <span className="dasig-orbit dasig-orbit-b">🍃</span>
+      </div>
+      <div className="dasig-companion-body">
+        <div className="dasig-kicker">DASIG, AGRIAN! <span>•</span> YOUR SCHOOL BUDDY</div>
+        <h2>{birthdayMessage?"🎂 It's Your Special Day!":`${status.emoji} ${status.title}`}</h2>
+        <p className="dasig-main-quote">“{birthdayMessage||quote}”</p>
+        <div className="dasig-chip-row">
+          <span>📊 {statusAverage!=null?`${Number(statusAverage).toFixed(2)} avg`:'No grades yet'}</span>
+          <span>📅 {attendancePct!=null?`${attendancePct}% attendance`:'Attendance building'}</span>
+        </div>
+        <div className="dasig-goal">
+          <div><b>{honorGap>0?`🌟 ${honorGap.toFixed(2)} points to 90`:"🏆 Honor benchmark reached!"}</b><small>{attendanceNote}</small></div>
+          <div className="dasig-goal-track"><i style={{width:`${Math.min(100,Math.max(0,(Number(statusAverage)||0)/90*100))}%`}}/></div>
+        </div>
+        <div className="dasig-achievement-row">
+          {achievements.map(a=><div className="dasig-mini-achievement" title={a.text} key={a.title}><span>{a.icon}</span><b>{a.title}</b></div>)}
+        </div>
+        <div className="dasig-actions">
+          <button onClick={()=>setQuote(getDasigDailyQuote(`${profile?.id||profile?.name}-${Date.now()}`))}>💬 Cheer Me Up</button>
+          <button onClick={onOpenDasig}>🌱 My DASIG Corner</button>
+        </div>
+      </div>
+    </section>
+  );
+};
+
 const CalendarPanel = ({ calendar, onSave, holidays=[], onAddHoliday, onDeleteHoliday }) => {
   const [daysMap, setDaysMap] = useState(() => {
     const m = {};
@@ -1238,8 +1521,8 @@ const CalendarPanel = ({ calendar, onSave, holidays=[], onAddHoliday, onDeleteHo
         📅 School Calendar
       </div>
       <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>
-        Set the official number of school days per month. This value is authoritative for SF2/SF4.
-        To make the daily attendance dates match it exactly, record holidays/suspensions below as Non-School Days.
+        The calendar is the single source of truth for school-day dates. Add holidays/suspensions here; the Daily Attendance grid, SF2, SF4, and learner attendance all calculate from the same date set.
+        The saved school-day count is checked against the generated date grid before reports are produced.
       </div>
       {[1,2,3].map(term=>{
         const termLabel = term===1?"Term 1: June 8 – Sept 15, 2026"
@@ -1269,7 +1552,7 @@ const CalendarPanel = ({ calendar, onSave, holidays=[], onAddHoliday, onDeleteHo
                     </Btn>
                   </div>
                   {(()=>{
-                    const actual=schoolDaysInMonth(m,holidays).length;
+                    const actual=attendanceEngine.dates(m,holidays).length;
                     const configured=parseInt(daysMap[key]||"0",10);
                     if (!configured) return null;
                     if (configured===actual) return <div style={{marginTop:6,fontSize:10.5,color:T.green2}}>✓ Calendar and date grid agree: {actual} school days.</div>;
@@ -1463,12 +1746,15 @@ const Login = () => {
 // ─── STUDENT DASHBOARD ───────────────────────────────────
 const StudentDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("grades");
+  const [dasigPulse,setDasigPulse]=useState(0);
   const [subjects,setSubjects]=useState([]);
   const [grades,setGrades]=useState([]);
   const [teachers,setTeachers]=useState([]);
   const [appointments,setAppointments]=useState([]);
-  const [attendance,setAttendance]=useState([]);
+  const [attendance,setAttendance]=useState([]); // legacy monthly summary (kept for backward compatibility)
+  const [dailyAttendance,setDailyAttendance]=useState([]); // authoritative student attendance source
   const [calendar,setCalendar]=useState([]);
+  const [holidays,setHolidays]=useState([]);
   const [section,setSection]=useState(null);
   const [apptForm,setApptForm]=useState({teacherId:"",date:"",time:"",reason:""});
   const [apptMsg,setApptMsg]=useState("");
@@ -1478,13 +1764,15 @@ const StudentDashboard = ({ profile, onLogout }) => {
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
-    const [sR,gR,tR,aR,attR,calR,secR]=await Promise.all([
+    const [sR,gR,tR,aR,attR,dailyR,calR,holR,secR]=await Promise.all([
       supabase.from("subjects").select("*").eq("grade_level",profile.grade_level),
       supabase.from("grades").select("*").eq("student_id",profile.id),
       supabase.from("profiles").select("id,name").eq("role","teacher"),
       supabase.from("appointments").select("*").eq("student_id",profile.id),
       supabase.from("attendance").select("*").eq("student_id",profile.id),
+      supabase.from("daily_attendance").select("student_id,date,status").eq("student_id",profile.id),
       supabase.from("school_calendar").select("*").order("year").order("month"),
+      supabase.from("school_holidays").select("date").order("date"),
       profile.section_id
         ?supabase.from("sections").select("*").eq("id",profile.section_id).single()
         :{data:null},
@@ -1499,7 +1787,9 @@ const StudentDashboard = ({ profile, onLogout }) => {
     if (tR.data) setTeachers(tR.data);
     if (aR.data) setAppointments(aR.data);
     if (attR.data) setAttendance(attR.data);
+    if (dailyR.data) setDailyAttendance(dailyR.data);
     if (calR.data) setCalendar(calR.data);
+    if (holR.data) setHolidays(holR.data);
     if (secR.data) setSection(secR.data);
     setLoading(false);
   },[profile.id,profile.grade_level,profile.section_id,profile.tve_qualification]);
@@ -1511,6 +1801,10 @@ const StudentDashboard = ({ profile, onLogout }) => {
         filter:`student_id=eq.${profile.id}`},()=>fetchData())
       .on("postgres_changes",{event:"*",schema:"public",table:"attendance",
         filter:`student_id=eq.${profile.id}`},()=>fetchData())
+      .on("postgres_changes",{event:"*",schema:"public",table:"daily_attendance",
+        filter:`student_id=eq.${profile.id}`},()=>fetchData())
+      .on("postgres_changes",{event:"*",schema:"public",table:"dasig_journey_events",
+        filter:`student_id=eq.${profile.id}`},()=>fetchData())
       .subscribe();
     return ()=>supabase.removeChannel(ch);
   },[fetchData,profile.id]);
@@ -1520,19 +1814,19 @@ const StudentDashboard = ({ profile, onLogout }) => {
   // MAPEH's two components feed into the MAPEH row itself — don't also
   // count them separately or they'd be averaged into the general average twice.
   const overallAvg=avg(subjects.filter(s=>!s.parent_subject_id).map(s=>getFinal(s.id)).filter(Boolean));
+  const termAverages=[1,2,3].map(term=>avg(subjects.filter(s=>!s.parent_subject_id).map(s=>getG(s.id,term)).filter(Boolean)));
+  const latestTermIndex=termAverages.reduce((last,v,i)=>v!=null?i:last,-1);
+  const termAverage=latestTermIndex>=0?termAverages[latestTermIndex]:overallAvg;
+  const previousAverage=latestTermIndex>0?termAverages[latestTermIndex-1]:null;
 
-  const getTermAttendance=term=>{
-    const termMonths=TERM_MONTHS.filter(m=>m.term===term);
-    let totalDays=0,totalPresent=0;
-    termMonths.forEach(m=>{
-      const cal=calendar.find(c=>c.month===m.month&&c.year===m.year&&c.term===term);
-      const att=attendance.find(a=>a.month===m.month&&a.year===m.year&&a.term===term);
-      totalDays+=(cal?.school_days||0); totalPresent+=(att?.days_present||0);
-    });
-    const absent=totalDays-totalPresent;
-    const pct=totalDays>0?Math.round((totalPresent/totalDays)*100):0;
-    return {totalDays,totalPresent,absent,pct};
-  };
+  // Attendance is derived from the same daily grid used by SF2. The old
+  // monthly `attendance` table is deliberately NOT used for the student
+  // dashboard because it can become stale when the calendar changes.
+  const getMonthlyAttendance=(tm)=>attendanceEngine.studentMonth(
+    tm,calendar,holidays,dailyAttendance
+  );
+
+  const getTermAttendance=term=>attendanceEngine.term(term,calendar,holidays,dailyAttendance);
 
   const submitAppt=async()=>{
     if (!apptForm.teacherId||!apptForm.date||!apptForm.time||!apptForm.reason){
@@ -1575,7 +1869,43 @@ const StudentDashboard = ({ profile, onLogout }) => {
             {icon:"📚",value:subjects.filter(s=>!s.parent_subject_id).length,label:"Subjects"},
             {icon:"🏫",value:section?.name||"—",label:"Section"}
           ]}/>
+          {(()=>{
+            const latestAttendance=latestTermIndex>=0?getTermAttendance(latestTermIndex+1):getTermAttendance(1);
+            return <AgrianCompanion profile={profile} average={overallAvg} termAverage={termAverage}
+              previousAverage={previousAverage} attendancePct={latestAttendance.totalDays?latestAttendance.pct:null}
+              onOpenDasig={()=>{setDasigPulse(p=>p+1);setTab("dasig");}}/>;
+          })()}
           <div key={tab} className="tab-scene">
+
+        {tab==="dasig"&&(
+          <div className="dasig-corner" key={dasigPulse}>
+            <SectionHeading eyebrow="YOUR AGRIAN COMPANION" title="DASIG Corner" action={<Badge text="Always cheering for you" color={T.green3}/>}/>
+            <Card className="dasig-quote-card">
+              <div className="dasig-quote-mascot"><img src={dasigAgrianMascot} alt="DASIG Agrian"/></div>
+              <div><div className="dasig-kicker">TODAY'S DASIG MESSAGE</div><h3>“{getDasigDailyQuote(profile?.id||profile?.name)}”</h3><p>You have a buddy here to celebrate your wins, notice your progress, and remind you that one difficult day does not define your journey.</p></div>
+            </Card>
+            <div className="dasig-corner-grid">
+              <Card><div className="dasig-panel-title">🏆 Your Growth Badges</div>
+                {buildDasigAchievements({average:overallAvg,attendancePct:latestTermIndex>=0?getTermAttendance(latestTermIndex+1).pct:null,termAverage,previousAverage}).map(a=>(
+                  <div className="dasig-badge-row" key={a.title}><span>{a.icon}</span><div><b>{a.title}</b><small>{a.text}</small></div></div>
+                ))}
+              </Card>
+              <Card><div className="dasig-panel-title">🌟 Your Next Harvest</div>
+                <div className="dasig-goal-large"><ProgressRing value={termAverage||0} label="to 90" size={118}/><div><b>{termAverage==null?"Start planting your grades":termAverage>=90?"You've reached the honor benchmark!":`${(90-termAverage).toFixed(2)} points to 90`}</b><p>{termAverage==null?"Complete your first recorded assessment and DASIG will start tracking your growth.":"Focus on the subjects where a little extra effort can lift your average."}</p></div></div>
+              </Card>
+            </div>
+            <Card style={{marginTop:12}}><div className="dasig-panel-title">📅 One Source, One Story</div>
+              <div className="dasig-source-flow"><span>🗓️ Calendar</span><i>→</i><span>📝 Daily Attendance</span><i>→</i><span>📄 SF2</span><i>→</i><span>📊 SF4</span><i>→</i><span>👤 Your Attendance</span></div>
+              <p className="dasig-source-note">Your attendance view is calculated from the same school-day calendar and daily attendance records used for the official attendance reports.</p>
+            </Card>
+            <DasigJourney profile={profile} termAverages={termAverages} average={overallAvg}
+              attendancePct={latestTermIndex>=0?getTermAttendance(latestTermIndex+1).pct:null}
+              currentStatus={attendanceEngine.learnerStatus(termAverage,previousAverage).key}/>
+            <div className="dasig-quote-grid">
+              {DASIG_QUOTES.slice(0,6).map((q,i)=><div className="dasig-quote-tile" key={q}><span>{["🌱","💚","🌟","📚","🔥","🏆"][i]}</span><p>“{q}”</p></div>)}
+            </div>
+          </div>
+        )}
 
         {tab==="profile"&&(
           <div>
@@ -1740,10 +2070,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
                 </thead>
                 <tbody>
                   {TERM_MONTHS.map((m,i)=>{
-                    const cal=calendar.find(c=>c.month===m.month&&c.year===m.year&&c.term===m.term);
-                    const att=attendance.find(a=>a.month===m.month&&a.year===m.year&&a.term===m.term);
-                    const sd=cal?.school_days||0,dp=att?.days_present||0,ab=sd-dp;
-                    const pct=sd>0?Math.round((dp/sd)*100):0;
+                    const {totalDays:sd,totalPresent:dp,absent:ab,pct,encoded}=getMonthlyAttendance(m);
                     return (
                       <tr key={i} style={{background:i%2===0?T.bgCard:"#f8fafc",
                         borderBottom:"1px solid #E3EEDD"}}>
@@ -1752,10 +2079,10 @@ const StudentDashboard = ({ profile, onLogout }) => {
                           <div style={{fontSize:9,color:T.textMuted}}>Term {m.term}</div>
                         </td>
                         <td style={{textAlign:"center",color:T.text}}>{sd||"—"}</td>
-                        <td style={{textAlign:"center",color:T.green2,fontWeight:700}}>{sd?dp:"—"}</td>
-                        <td style={{textAlign:"center",color:ab>0?T.red:T.gray}}>{sd?ab:"—"}</td>
+                        <td style={{textAlign:"center",color:T.green2,fontWeight:700}}>{sd?(encoded?dp:"—"):"—"}</td>
+                        <td style={{textAlign:"center",color:ab>0?T.red:T.gray}}>{sd?(encoded?ab:"—"):"—"}</td>
                         <td style={{textAlign:"center",fontWeight:700,
-                          color:sd?attendColor(pct):T.gray}}>{sd?pct+"%":"—"}</td>
+                          color:sd&&encoded?attendColor(pct):T.gray}}>{sd&&encoded?pct+"%":"—"}</td>
                       </tr>
                     );
                   })}
@@ -1833,7 +2160,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
         </div>
       </div>
       <BottomNav
-        tabs={[["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"]]}
+        tabs={[["🌱","Dasig","dasig"],["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"]]}
         active={tab} setActive={setTab}/>
       <Toast msg={toast}/>
     </div>
@@ -2085,8 +2412,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const saveDailyAttendance=async()=>{
     if (!selAttMonth){notify("⚠️ Select a month first.");return;}
-    const days=schoolDaysInMonth(selAttMonth,holidays);
+    const calendarSource=attendanceEngine.configuredDays(selAttMonth,calendar,holidays);
+    const days=calendarSource.days;
     if (!days.length){notify("⚠️ No school days in this range (check holidays).");return;}
+    if (!calendarSource.agreed){
+      notify(`⚠️ Calendar mismatch: configured ${calendarSource.configured}, actual date grid ${calendarSource.actual}. Fix the calendar before saving attendance.`);
+      return;
+    }
     setSavingAtt(true);
     // Write the FULL grid (every student × every school day this month) so the
     // daily record always matches exactly what's shown on screen.
