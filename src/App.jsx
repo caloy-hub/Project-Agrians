@@ -73,14 +73,22 @@ const attendanceEngine = {
   },
   studentMonth: (tm, calendar, holidays, rows=[]) => {
     const source = attendanceEngine.configuredDays(tm, calendar, holidays);
-    const statusByDate = new Map(rows.filter(r=>source.days.some(d=>d.date===r.date)).map(r=>[r.date,r.status]));
-    const encoded = rows.length>0;
+    // Only rows belonging to this exact calendar month/term are relevant.
+    // Previously, passing the full dailyAttendance array made `encoded` true
+    // whenever the learner had attendance in ANY month, which could make an
+    // unencoded month appear as 0% or inherit misleading totals.
+    const relevantRows = rows.filter(r=>source.days.some(d=>d.date===r.date));
+    const statusByDate = new Map(relevantRows.map(r=>[r.date,r.status]));
+    const encoded = relevantRows.length>0;
     const present = encoded ? source.days.filter(d=>statusByDate.get(d.date)!=="absent").length : 0;
-    const totalDays = Math.max(0, source.agreed ? source.actual : source.configured);
-    const totalPresent = Math.min(present,totalDays);
-    const absent = Math.max(0,totalDays-totalPresent);
+    // The generated date grid is the canonical denominator. The manually
+    // configured calendar count is validated against it, but must never be
+    // allowed to produce impossible values such as 21 present / 19 days.
+    const totalDays = Math.max(0, source.actual);
+    const totalPresent = encoded ? Math.min(Math.max(present,0),totalDays) : 0;
+    const absent = encoded ? Math.max(0,totalDays-totalPresent) : 0;
     return { ...source, totalDays, totalPresent, absent,
-      pct: totalDays ? Math.round(totalPresent/totalDays*100) : 0, encoded };
+      pct: encoded && totalDays ? Math.round(totalPresent/totalDays*100) : 0, encoded };
   },
   term: (term, calendar, holidays, rows=[]) => {
     const monthly=TERM_MONTHS.filter(m=>m.term===term).map(m=>{
@@ -223,6 +231,31 @@ const css = `
 `;
 
 const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
+
+
+// ── STUDENT NAME DISPLAY ─────────────────────────────────────────────────
+// Student names are stored exactly as encoded (e.g. "DELA CRUZ, JUAN, D.")
+// so official forms such as SF2 and SF9 can preserve the encoded/DepEd order.
+// Everywhere else in the app, this helper automatically recognizes the
+// comma-separated surname-first convention and displays First Name M.I. Surname.
+// Names that are already in ordinary order, or do not contain enough comma
+// segments to be safely interpreted, are returned unchanged.
+const displayStudentName = raw => {
+  const value=String(raw||'').trim().replace(/\s+/g,' ');
+  if (!value || !value.includes(',')) return value;
+  const parts=value.split(',').map(x=>x.trim()).filter(Boolean);
+  if (parts.length<2 || parts.length>3) return value;
+  const surname=parts[0];
+  const first=parts[1];
+  const middle=parts[2]||'';
+  // Only auto-reorder when the last segment looks like a middle initial.
+  // This avoids guessing on unusual names with multiple comma-separated parts.
+  if (parts.length===3 && middle && !/^[A-Za-z](?:\.)?$/.test(middle)) return value;
+  return [first,middle,surname].filter(Boolean).join(' ');
+};
+
+const studentDisplay = student => displayStudentName(student?.name);
+const studentNameText = value => displayStudentName(value);
 
 // ── MAPEH components ────────────────────────────────────────────────────
 // MAPEH is not graded directly. It has two components — "PE and Health"
@@ -760,8 +793,11 @@ const AddStudentForm = ({ sections, gradeFilter, onAdd, loading, qualifications 
     <Card style={{marginBottom:12}}>
       <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Student</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-        <input placeholder="Full Name *" value={form.name}
-          onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+        <div style={{display:"grid",gap:4}}>
+          <input placeholder="Student Name * (e.g. DELA CRUZ, JUAN, D.)" value={form.name}
+            onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+          {form.name.includes(",")&&<div style={{fontSize:10,color:T.green2}}>Display preview: <strong>{displayStudentName(form.name)}</strong> · Official SF2/SF9 will retain the encoded name order.</div>}
+        </div>
         <input placeholder="LRN (12 digits) *" value={form.lrn} maxLength={12}
           onChange={e=>setForm(p=>({...p,lrn:e.target.value}))}/>
         {!gradeFilter&&(
@@ -872,8 +908,11 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
           Correct any encoding errors below, then save.
         </div>
         <div style={{display:"grid",gap:8,marginBottom:8}}>
-          <input placeholder="Full Name *" value={form.name}
-            onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+          <div style={{display:"grid",gap:4}}>
+            <input placeholder="Student Name * (e.g. DELA CRUZ, JUAN, D.)" value={form.name}
+              onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
+            {form.name.includes(",")&&<div style={{fontSize:10,color:T.green2}}>Display preview: <strong>{displayStudentName(form.name)}</strong> · Official SF2/SF9 will retain the encoded name order.</div>}
+          </div>
           <input placeholder="LRN (12 digits) *" value={form.lrn} maxLength={12}
             onChange={e=>setForm(p=>({...p,lrn:e.target.value}))}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -1216,7 +1255,7 @@ const StudentCard = ({ student:s, sections, showActions, onDelete, onReset, onRe
     <Card style={{marginBottom:6,padding:"8px 12px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1}} onClick={()=>setExpand(p=>!p)}>
-          <div style={{fontWeight:700,fontSize:13,color:T.text}}>{s.name}</div>
+          <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentDisplay(s)}</div>
           <div style={{fontSize:11,color:T.textMuted,display:"flex",gap:8,flexWrap:"wrap"}}>
             <span>LRN: {s.lrn}</span><span>Gr.{s.grade_level}</span>
             {sec&&<span>{sec.name}</span>}
@@ -1752,7 +1791,8 @@ const StudentDashboard = ({ profile, onLogout }) => {
   const [teachers,setTeachers]=useState([]);
   const [appointments,setAppointments]=useState([]);
   const [attendance,setAttendance]=useState([]); // legacy monthly summary (kept for backward compatibility)
-  const [dailyAttendance,setDailyAttendance]=useState([]); // authoritative student attendance source
+  const [dailyAttendance,setDailyAttendance]=useState([]); // raw daily rows for fallback/detail
+  const [canonicalAttendance,setCanonicalAttendance]=useState({}); // database source-of-truth summaries
   const [calendar,setCalendar]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [section,setSection]=useState(null);
@@ -1764,12 +1804,11 @@ const StudentDashboard = ({ profile, onLogout }) => {
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
-    const [sR,gR,tR,aR,attR,dailyR,calR,holR,secR]=await Promise.all([
+    const [sR,gR,tR,aR,dailyR,calR,holR,secR]=await Promise.all([
       supabase.from("subjects").select("*").eq("grade_level",profile.grade_level),
       supabase.from("grades").select("*").eq("student_id",profile.id),
       supabase.from("profiles").select("id,name").eq("role","teacher"),
       supabase.from("appointments").select("*").eq("student_id",profile.id),
-      supabase.from("attendance").select("*").eq("student_id",profile.id),
       supabase.from("daily_attendance").select("student_id,date,status").eq("student_id",profile.id),
       supabase.from("school_calendar").select("*").order("year").order("month"),
       supabase.from("school_holidays").select("date").order("date"),
@@ -1786,7 +1825,6 @@ const StudentDashboard = ({ profile, onLogout }) => {
     if (gR.data) setGrades(gR.data);
     if (tR.data) setTeachers(tR.data);
     if (aR.data) setAppointments(aR.data);
-    if (attR.data) setAttendance(attR.data);
     if (dailyR.data) setDailyAttendance(dailyR.data);
     if (calR.data) setCalendar(calR.data);
     if (holR.data) setHolidays(holR.data);
@@ -1799,8 +1837,6 @@ const StudentDashboard = ({ profile, onLogout }) => {
     const ch=supabase.channel("student-realtime")
       .on("postgres_changes",{event:"*",schema:"public",table:"grades",
         filter:`student_id=eq.${profile.id}`},()=>fetchData())
-      .on("postgres_changes",{event:"*",schema:"public",table:"attendance",
-        filter:`student_id=eq.${profile.id}`},()=>fetchData())
       .on("postgres_changes",{event:"*",schema:"public",table:"daily_attendance",
         filter:`student_id=eq.${profile.id}`},()=>fetchData())
       .on("postgres_changes",{event:"*",schema:"public",table:"dasig_journey_events",
@@ -1808,6 +1844,27 @@ const StudentDashboard = ({ profile, onLogout }) => {
       .subscribe();
     return ()=>supabase.removeChannel(ch);
   },[fetchData,profile.id]);
+
+  // Attendance Audit Pass: learner-facing monthly totals come from the same
+  // database RPC consumed by the report generators. The local attendanceEngine
+  // remains only as a compatibility fallback if an older deployment has not
+  // applied the canonical migration yet.
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      const entries=await Promise.all(TERM_MONTHS.map(async m=>{
+        const {data,error}=await supabase.rpc("agrians_student_attendance_summary",{
+          p_student_id:profile.id,p_month:m.month,p_year:m.year,p_term:m.term
+        });
+        return {key:`${m.month}-${m.year}-${m.term}`,row:Array.isArray(data)?data[0]:data,error};
+      }));
+      if(cancelled)return;
+      const next={};
+      entries.forEach(x=>{ if(!x.error&&x.row) next[x.key]=x.row; });
+      setCanonicalAttendance(next);
+    })();
+    return ()=>{cancelled=true;};
+  },[profile.id,dailyAttendance,calendar,holidays]);
 
   const getG=(subId,term)=>gradeForTerm(subjects.find(s=>s.id===subId),term,subjects,grades);
   const getFinal=subId=>avg([1,2,3].map(t=>getG(subId,t)).filter(Boolean));
@@ -1822,11 +1879,29 @@ const StudentDashboard = ({ profile, onLogout }) => {
   // Attendance is derived from the same daily grid used by SF2. The old
   // monthly `attendance` table is deliberately NOT used for the student
   // dashboard because it can become stale when the calendar changes.
-  const getMonthlyAttendance=(tm)=>attendanceEngine.studentMonth(
-    tm,calendar,holidays,dailyAttendance
-  );
+  const getMonthlyAttendance=(tm)=>{
+    const key=`${tm.month}-${tm.year}-${tm.term}`;
+    const row=canonicalAttendance[key];
+    if(row) return {
+      actual:Number(row.total_days)||0, configured:calendar.find(c=>c.month===tm.month&&c.year===tm.year&&c.term===tm.term)?.school_days,
+      agreed:true, days:schoolDaysInMonth(tm,holidays), totalDays:Number(row.total_days)||0,
+      totalPresent:Number(row.total_present)||0, absent:Number(row.absent)||0,
+      pct:Number(row.attendance_pct)||0, encoded:!!row.encoded
+    };
+    return attendanceEngine.studentMonth(tm,calendar,holidays,dailyAttendance);
+  };
 
-  const getTermAttendance=term=>attendanceEngine.term(term,calendar,holidays,dailyAttendance);
+  const getTermAttendance=term=>{
+    const months=TERM_MONTHS.filter(m=>m.term===term);
+    const rows=months.map(m=>canonicalAttendance[`${m.month}-${m.year}-${m.term}`]);
+    if(rows.every(Boolean)){
+      const totalDays=rows.reduce((n,r)=>n+(Number(r.total_days)||0),0);
+      const totalPresent=rows.reduce((n,r)=>n+(Number(r.total_present)||0),0);
+      const absent=rows.reduce((n,r)=>n+(Number(r.absent)||0),0);
+      return {totalDays,totalPresent,absent,pct:totalDays?Math.round(totalPresent/totalDays*100):0,encoded:rows.some(r=>r.encoded)};
+    }
+    return attendanceEngine.term(term,calendar,holidays,dailyAttendance);
+  };
 
   const submitAppt=async()=>{
     if (!apptForm.teacherId||!apptForm.date||!apptForm.time||!apptForm.reason){
@@ -1859,7 +1934,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
   return (
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
       <SchoolHeader small/>
-      <TopBar name={profile.name}
+      <TopBar name={studentNameText(profile.name)}
         sub={`Grade ${profile.grade_level}${section?" – "+section.name:""} · LRN: ${profile.lrn}`}
         onLogout={onLogout}/>
       <div className="dashboard-scroll">
@@ -1912,7 +1987,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
             <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>👤 Student Profile</div>
             <Card style={{marginBottom:10}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                {[["Full Name",profile.name],["LRN",profile.lrn],
+                {[["Full Name",studentNameText(profile.name)],["LRN",profile.lrn],
                   ["Grade Level","Grade "+profile.grade_level],["Section",section?.name||"—"],
                   ["Gender",profile.gender||"—"],["Birthday",profile.birthday||"—"],
                   ...(profile.tve_qualification?[["TVE Qualification",profile.tve_qualification]]:[]),
@@ -2432,16 +2507,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       .upsert(rows,{onConflict:"student_id,date"});
     if (error){notify("❌ "+error.message);setSavingAtt(false);return;}
 
-    // Keep the legacy monthly summary (used elsewhere in the app).
-    // IMPORTANT: do NOT overwrite school_calendar here. The admin calendar is
-    // the authoritative monthly school-day setting; attendance encoding must
-    // never silently change it.
-    const {month,year,term}=selAttMonth;
-    const monthlyRows=classStudents.map(s=>{
-      const presentCount=days.filter(d=>getDailyStatus(s.id,d.date)==="present").length;
-      return {student_id:s.id,month,year,term,days_present:presentCount,encoded_by:profile.id};
-    });
-    await supabase.from("attendance").upsert(monthlyRows,{onConflict:"student_id,month,year,term"});
+    // Do not write a second monthly attendance total. The daily grid is now
+    // the sole attendance record; monthly totals are derived from it. This
+    // prevents stale rows (e.g. 21 present after the calendar is corrected to
+    // 19 school days) from surviving in a legacy attendance table.
     setSavingAtt(false);
     notify("✅ Daily attendance saved!");
     fetchData();
@@ -2633,7 +2702,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   return (
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
       <SchoolHeader small/>
-      <TopBar name={profile.name}
+      <TopBar name={studentNameText(profile.name)}
         sub={`Teacher${mySection?" · Adviser: "+mySection.name:""}${profile.is_curriculum_head?" · Curriculum Head Gr."+profile.assigned_grade_level:""}`}
         onLogout={onLogout}/>
       <Toast msg={toast}/>
@@ -2674,7 +2743,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                       const assigned=subjectAssignments.filter(a=>a.subject_id===s.id);
                       const secNames=assigned.map(a=>sections.find(sc=>sc.id===a.section_id)?.name).filter(Boolean);
                       return <option key={s.id} value={s.id}>
-                        {s.name} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}{secNames.length?` · ${secNames.join(", ")}`:(s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:"")})
+                        {studentDisplay(s)} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}{secNames.length?` · ${secNames.join(", ")}`:(s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:"")})
                       </option>;
                     })}
                   </select>
@@ -2744,7 +2813,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                     <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,
                       padding:"8px 0",borderBottom:"1px solid #E3EEDD"}}>
                       <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{s.name}</div>
+                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{studentDisplay(s)}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn}</div>
                       </div>
                       <input type="number" min="0" max="100" style={{width:72,textAlign:"center"}}
@@ -2850,7 +2919,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                       {computeGradeSummary(summaryTerm).map(({student,bySubject,average})=>(
                         <tr key={student.id} style={{borderBottom:"1px solid #f0f0f0"}}>
                           <td style={{padding:"6px 8px",fontWeight:600,position:"sticky",left:0,
-                            background:"#fff",whiteSpace:"nowrap"}}>{student.name}</td>
+                            background:"#fff",whiteSpace:"nowrap"}}>{studentDisplay(student)}</td>
                           {allGradeSubjects.filter(sub=>(!sub.section_id||sub.section_id===mySection.id)&&!sub.parent_subject_id).map(sub=>(
                             <td key={sub.id} style={{padding:"6px 6px",textAlign:"center",
                               color:bySubject[sub.id]===null?T.gray:T.text}}>
@@ -2879,7 +2948,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <Card key={s.id} style={{marginBottom:6,padding:"10px 12px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div>
-                        <div style={{fontWeight:700,fontSize:13,color:T.text}}>{s.name}</div>
+                        <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentDisplay(s)}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn} · {s.birthday||"—"}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>{s.address||"—"}</div>
                       </div>
@@ -2899,7 +2968,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <Card key={s.id} style={{marginBottom:6,padding:"10px 12px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                       <div>
-                        <div style={{fontWeight:700,fontSize:13,color:T.text}}>{s.name}</div>
+                        <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentDisplay(s)}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn} · {s.birthday||"—"}</div>
                         <div style={{fontSize:11,color:T.textMuted}}>{s.address||"—"}</div>
                       </div>
@@ -2981,7 +3050,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                               <tr key={s.id}>
                                 <td style={{position:"sticky",left:0,background:T.bgCard,zIndex:1,
                                   padding:"4px 8px",borderBottom:"1px solid #E3EEDD",fontWeight:600,color:T.text}}>
-                                  {s.name}
+                                  {studentDisplay(s)}
                                 </td>
                                 {days.map(d=>{
                                   const status=getDailyStatus(s.id,d.date);
@@ -3050,7 +3119,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   <select value={advApptForm.studentId}
                     onChange={e=>setAdvApptForm(p=>({...p,studentId:e.target.value}))}>
                     <option value="">-- Select Student --</option>
-                    {classStudents.map(s=><option key={s.id} value={s.id}>{s.name} (LRN: {s.lrn})</option>)}
+                    {classStudents.map(s=><option key={s.id} value={s.id}>{studentDisplay(s)} (LRN: {s.lrn})</option>)}
                   </select>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <input type="date" value={advApptForm.date}
@@ -3073,7 +3142,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
               :appointments.map(a=>(
                 <Card key={a.id} style={{marginBottom:8}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <div style={{fontWeight:700,color:T.text}}>{a.student_name}</div>
+                    <div style={{fontWeight:700,color:T.text}}>{studentNameText(a.student_name)}</div>
                     <Badge text={a.status}
                       color={a.status==="Pending"?T.yellow:a.status==="Approved"?T.green4:T.red}/>
                   </div>
@@ -3147,7 +3216,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                       return (
                         <div key={student.id} style={{display:"flex",justifyContent:"space-between",
                           alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f0f0f0"}}>
-                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{student.name}</div>
+                          <div style={{fontSize:12,fontWeight:600,color:T.text}}>{studentDisplay(student)}</div>
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <Badge text={String(avg)} color={T.green3}/>
                             <Btn color={T.yellow} style={{padding:"4px 8px",fontSize:10}}
@@ -3214,7 +3283,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                 <Card key={s.id} style={{marginBottom:8,padding:"10px 12px"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
-                      <div style={{fontWeight:700,fontSize:13,color:T.text}}>{s.name}</div>
+                      <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentDisplay(s)}</div>
                       <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn}</div>
                     </div>
                     <Btn color={T.blue} style={{padding:"6px 12px",fontSize:11}}
@@ -3612,6 +3681,18 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [genBusy,setGenBusy]=useState(false);
   const [sf4Incomplete,setSf4Incomplete]=useState(null); // null=not checked; [] = all encoded; [names] = gaps
   const [checkingSf4,setCheckingSf4]=useState(false);
+  const [attendanceAudit,setAttendanceAudit]=useState(null);
+  const [attendanceAuditBusy,setAttendanceAuditBusy]=useState(false);
+  const runAttendanceAudit=async()=>{
+    if(!sf2Section||!sf2Month){notify("⚠️ Select a section and month first.");return;}
+    setAttendanceAuditBusy(true); setAttendanceAudit(null);
+    const {data,error}=await supabase.rpc("agrians_attendance_audit",{
+      p_section_id:sf2Section,p_month:sf2Month.month,p_year:sf2Month.year,p_term:sf2Month.term
+    });
+    setAttendanceAuditBusy(false);
+    if(error){notify("❌ Attendance audit unavailable: "+error.message);return;}
+    setAttendanceAudit(Array.isArray(data)?data[0]:data);
+  };
 
   // Before generating SF4, quietly check which sections in scope haven't
   // saved a Daily Attendance grid for the selected month yet, so the admin
@@ -4379,7 +4460,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
                 <select value={nGrade.student_id}
                   onChange={e=>setNGrade(p=>({...p,student_id:e.target.value}))}>
                   <option value="">-- Select Student --</option>
-                  {students.map(s=><option key={s.id} value={s.id}>{s.name} (LRN: {s.lrn})</option>)}
+                  {students.map(s=><option key={s.id} value={s.id}>{studentDisplay(s)} (LRN: {s.lrn})</option>)}
                 </select>
                 <select value={nGrade.subject_id}
                   onChange={e=>setNGrade(p=>({...p,subject_id:e.target.value}))}>
@@ -4459,6 +4540,32 @@ const AdminDashboard = ({ profile, onLogout }) => {
               </div>
             </Card>
 
+            <Card style={{marginBottom:16,background:"#f4fbf1",border:"1px solid #cfe3c8"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:6}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:T.green2}}>🔎 Attendance Audit Pass</div>
+                  <div style={{fontSize:10.5,color:T.textMuted}}>Reconcile Calendar → Daily Attendance → learner totals before generating reports.</div>
+                </div>
+                <Btn onClick={runAttendanceAudit} disabled={attendanceAuditBusy||!sf2Section||!sf2Month} style={{whiteSpace:"nowrap"}}>
+                  {attendanceAuditBusy?"⏳ Auditing…":"Run Audit"}
+                </Btn>
+              </div>
+              {attendanceAudit&&<div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:6,marginTop:8}}>
+                {[
+                  ["Calendar",attendanceAudit.calendar_agrees?"PASS":"MISMATCH"],
+                  ["School days",`${attendanceAudit.actual_days} (configured ${attendanceAudit.configured_days??"—"})`],
+                  ["Roster",attendanceAudit.roster_count],
+                  ["Encoded learners",`${attendanceAudit.encoded_student_count}/${attendanceAudit.roster_count}`],
+                  ["Rows in school-day grid",attendanceAudit.daily_rows_in_grid],
+                  ["Rows outside grid",attendanceAudit.daily_rows_outside_grid],
+                  ["Duplicate student/date",attendanceAudit.duplicate_student_date_count],
+                  ["Impossible totals",attendanceAudit.impossible_summary_count]
+                ].map(([label,value])=><div key={label} style={{padding:"7px 9px",background:"#fff",borderRadius:7,border:"1px solid #e1eadf",fontSize:10.5}}>
+                  <div style={{color:T.textMuted}}>{label}</div><strong style={{color:(label==="Calendar"&&value!=="PASS")||((label==="Rows outside grid"||label==="Duplicate student/date"||label==="Impossible totals")&&Number(value)>0)?T.red:T.green3}}>{value}</strong>
+                </div>)}
+              </div>}
+            </Card>
+
             <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:6}}>
               School Form 4 — Monthly Learner's Movement & Attendance
             </div>
@@ -4516,7 +4623,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
               :appointments.map(a=>(
                 <Card key={a.id} style={{marginBottom:8}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <div style={{fontWeight:700,fontSize:13,color:T.text}}>{a.student_name}</div>
+                    <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentNameText(a.student_name)}</div>
                     <Badge text={a.status}
                       color={a.status==="Pending"?T.yellow:a.status==="Approved"?T.green4:T.red}/>
                   </div>

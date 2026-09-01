@@ -188,7 +188,18 @@ serve(async (req: Request) => {
     d.centered(cx, y, "This certificate is awarded to", fReg, 12.5);
     y -= 10 * MM;
 
-    const studentName = (student.name || "").toUpperCase();
+    const formatStudentDisplayName = (raw: string) => {
+      const value = String(raw || "").trim().replace(/\s+/g, " ");
+      if (!value || !value.includes(",")) return value;
+      const parts = value.split(",").map(x => x.trim()).filter(Boolean);
+      if (parts.length < 2 || parts.length > 3) return value;
+      const surname = parts[0];
+      const first = parts[1];
+      const middle = parts[2] || "";
+      if (parts.length === 3 && middle && !/^[A-Za-z](?:\.)?$/.test(middle)) return value;
+      return [first, middle, surname].filter(Boolean).join(" ");
+    };
+    const studentName = formatStudentDisplayName(student.name || "").toUpperCase();
     d.centered(cx, y, studentName, fBold, 30, NAVY);
     y -= 9 * MM;
 
@@ -250,7 +261,7 @@ serve(async (req: Request) => {
       headers: {
         ...corsHeaders,
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="Certificate_${(student.name || "student").replace(/\s+/g, "_")}_${String(period_label).replace(/\s+/g, "_")}.pdf"`,
+        "Content-Disposition": `attachment; filename="Certificate_${formatStudentDisplayName(student.name || "student").replace(/\s+/g, "_")}_${String(period_label).replace(/\s+/g, "_")}.pdf"`,
       },
     });
   } catch (err) {

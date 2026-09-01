@@ -28,37 +28,7 @@ const SCHOOL_INFO = {
   schoolId: "304342",
 };
 
-// Same school-year calendar boundaries as the frontend's TERM_MONTHS.
-const TERM_MONTHS: { month:number; year:number; term:number; startDay?:number; endDay?:number }[] = [
-  { month:6,  year:2026, term:1, startDay:8 },
-  { month:7,  year:2026, term:1 },
-  { month:8,  year:2026, term:1 },
-  { month:9,  year:2026, term:1, endDay:15 },
-  { month:9,  year:2026, term:2, startDay:16 },
-  { month:10, year:2026, term:2 },
-  { month:11, year:2026, term:2 },
-  { month:12, year:2026, term:2, endDay:18 },
-  { month:1,  year:2027, term:3, startDay:4 },
-  { month:2,  year:2027, term:3 },
-  { month:3,  year:2027, term:3 },
-  { month:4,  year:2027, term:3, endDay:8 },
-];
 const MONTH_NAMES = ["","January","February","March","April","May","June","July","August","September","October","November","December"];
-
-function schoolDaysInMonth(month:number, year:number, term:number, holidays:{date:string}[]) {
-  const tm = TERM_MONTHS.find(t=>t.month===month&&t.year===year&&t.term===term);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const start = tm?.startDay || 1, end = tm?.endDay || daysInMonth;
-  const out: {date:string; day:number}[] = [];
-  for (let d=start; d<=end; d++) {
-    const dow = new Date(year, month-1, d).getDay();
-    if (dow===0||dow===6) continue;
-    const iso = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    if (holidays.some(h=>h.date===iso)) continue;
-    out.push({date:iso, day:d});
-  }
-  return out;
-}
 
 class Drawer {
   page: PDFPage; fReg: PDFFont; fBold: PDFFont;
@@ -116,69 +86,43 @@ serve(async (req: Request) => {
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const [{ data: students }, { data: holidays }, adviser] = await Promise.all([
+    const [{ data: students }, adviser] = await Promise.all([
       adminClient.from("profiles").select("*").eq("role","student").eq("section_id",section_id).order("gender").order("name"),
-      adminClient.from("school_holidays").select("date"),
       section.adviser_id
         ? adminClient.from("profiles").select("name").eq("id",section.adviser_id).single().then(r=>r.data)
         : Promise.resolve(null),
     ]);
 
-    const days = schoolDaysInMonth(month, year, term, holidays||[]);
+    // Canonical calculation bridge: the database owns the school-day grid and
+    // attendance status expansion used by this PDF. The raw-row check below is
+    // only an encoding/readiness check; it is not used to calculate totals.
+    const { data: dayRows, error: dayErr } = await adminClient.rpc("agrians_school_days", {
+      p_month:month,p_year:year,p_term:term
+    });
+    if (dayErr) throw new Error(dayErr.message);
+    const days = (dayRows||[]).map((r:any)=>({date:String(r.date),day:Number(String(r.date).slice(8,10))}));
+    const { data: gridRows, error: gridErr } = await adminClient.rpc("agrians_attendance_grid", {
+      p_section_id:section_id,p_month:month,p_year:year,p_term:term
+    });
+    if (gridErr) throw new Error(gridErr.message);
+    const gridByKey = new Map<string,string>((gridRows||[]).map((r:any)=>[`${r.student_id}|${r.date}`,r.status]));
     const stuIds = (students||[]).map(s=>s.id);
-    let dailyRows: {student_id:string; date:string; status:string}[] = [];
-    if (stuIds.length && days.length) {
-      const { data } = await adminClient.from("daily_attendance").select("*")
-        .in("student_id", stuIds).gte("date", days[0].date).lte("date", days[days.length-1].date);
-      dailyRows = data || [];
-    }
-
-    // If the adviser has never opened + saved the Daily Attendance grid for this
-    // month, dailyRows comes back completely empty. Silently falling back to
-    // "present" for every learner/day in that case (as the on-screen grid does,
-    // for data-entry convenience before a save) would print a misleading 100%
-    // attendance report for a section that was never actually encoded — and is
-    // exactly what made this section's real numbers "disappear" once compiled
-    // into SF4. Refuse instead, so the gap is visible rather than silent.
-    if (days.length>0 && stuIds.length>0 && dailyRows.length===0) {
+    const { data: rawRows } = stuIds.length
+      ? await adminClient.from("daily_attendance").select("student_id,date").in("student_id",stuIds)
+        .gte("date",`${year}-${String(month).padStart(2,"0")}-01`).lte("date",`${year}-${String(month).padStart(2,"0")}-31`)
+      : {data:[] as any[]};
+    const encoded = (rawRows||[]).some((r:any)=>days.some((d:any)=>d.date===r.date));
+    if (days.length>0 && stuIds.length>0 && !encoded) {
       return new Response(JSON.stringify({ error:
         `Attendance for ${section.name} has not been encoded for ${MONTH_NAMES[month]} ${year} yet. `
         + `Ask the section adviser to encode and save the Daily Attendance grid first, then generate SF2 again.`
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }), { status:400, headers:{...corsHeaders,"Content-Type":"application/json"} });
     }
 
-    const statusFor = (studentId:string, date:string) => {
-      const row = dailyRows.find(r=>r.student_id===studentId && r.date===date);
-      return row ? row.status : "present"; // matches the adviser UI's default-present convention
-    };
-
+    const statusFor = (studentId:string, date:string) => gridByKey.get(`${studentId}|${date}`) || "present";
     const males = (students||[]).filter(s=>s.gender==="Male");
     const females = (students||[]).filter(s=>s.gender==="Female");
     const ordered = [...males, ...females];
-
-    // Read the admin-configured school-day count. The calendar value is the
-    // official monthly count; the actual daily columns are still derived from
-    // weekdays minus explicitly registered non-school days because attendance
-    // needs real dates, not just a number.
-    const { data: calendarRow } = await adminClient.from("school_calendar")
-      .select("school_days").eq("month",month).eq("year",year).eq("term",term).maybeSingle();
-    const configuredSchoolDays = calendarRow?.school_days != null
-      ? Number(calendarRow.school_days) : null;
-    const actualSchoolDays = days.length;
-
-    // If the configured count and the date-based count disagree, do not silently
-    // produce an SF2 whose calendar says 19 days while the grid contains 21.
-    // The admin can resolve this by adding the missing non-school dates under
-    // Calendar → Non-School Days (Holidays / Suspensions).
-    if (configuredSchoolDays != null && configuredSchoolDays !== actualSchoolDays) {
-      return new Response(JSON.stringify({ error:
-        `School calendar mismatch for ${MONTH_NAMES[month]} ${year}: `
-        + `Calendar is set to ${configuredSchoolDays} school days, but the SF2 date grid `
-        + `currently contains ${actualSchoolDays} weekdays. `
-        + `Please add the ${Math.abs(actualSchoolDays-configuredSchoolDays)} non-school date(s) `
-        + `under School Calendar → Non-School Days, or correct the school-day count, then generate SF2 again.`
-      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
 
     const pdfDoc = await PDFDocument.create();
     const fReg = await pdfDoc.embedFont(StandardFonts.Helvetica);

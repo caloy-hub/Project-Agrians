@@ -254,20 +254,15 @@ serve(async (req: Request) => {
     }
 
     // ---------- Fetch related data ----------
-    const [sectionRes, subjectsRes, gradesRes, attendanceRes, calendarRes] = await Promise.all([
+    const [sectionRes, subjectsRes, gradesRes] = await Promise.all([
       adminClient.from("sections").select("*").eq("id", student.section_id).maybeSingle(),
       adminClient.from("subjects").select("*").eq("grade_level", student.grade_level),
       adminClient.from("grades").select("*").eq("student_id", student_id),
-      adminClient.from("attendance").select("*").eq("student_id", student_id),
-      adminClient.from("school_calendar").select("*"),
     ]);
 
     const section = sectionRes.data;
     const subjects = subjectsRes.data || [];
     const grades = gradesRes.data || [];
-    const attendance = attendanceRes.data || [];
-    const calendar = calendarRes.data || [];
-
     const subjectById: Record<string, any> = {};
     for (const s of subjects) subjectById[s.id] = s;
 
@@ -280,13 +275,33 @@ serve(async (req: Request) => {
       gradeMap[subj.name][g.term] = g.grade;
     }
 
-    // attendance lookup: month -> {present, schoolDays}
-    const attByMonth: Record<string, { present: number; total: number }> = {};
-    for (const a of attendance) {
-      const cal = calendar.find((c: any) => c.month === a.month && c.year === a.year && c.term === a.term);
-      const total = cal?.school_days || 0;
-      attByMonth[a.month] = { present: (attByMonth[a.month]?.present || 0) + (a.days_present || 0), total: (attByMonth[a.month]?.total || 0) + total };
-    }
+    // Canonical attendance lookup: every monthly total is read from the same
+    // database summary used by the learner dashboard and SF4. September is
+    // split across Term 1 and Term 2, so its two canonical summaries are
+    // combined into one SF9 calendar-month value.
+    const schoolYearStart = Number(String(school_year||"2026").slice(0,4));
+    const monthDefs = MONTHS.map((label,i)=>{
+      const m=i<7 ? i+6 : i-5;
+      const y=m>=6 ? schoolYearStart : schoolYearStart+1;
+      const terms = m===9 ? [1,2] : [m>=6&&m<=8 ? 1 : m>=10&&m<=12 ? 2 : 3];
+      return {label,m,y,terms};
+    });
+    const attResults = await Promise.all(monthDefs.map(async def=>{
+      const parts:any[]=[];
+      for (const t of def.terms) {
+        const {data,error}=await adminClient.rpc("agrians_student_attendance_summary",{
+          p_student_id:student_id,p_month:def.m,p_year:def.y,p_term:t
+        });
+        if(error) throw new Error(error.message);
+        if(Array.isArray(data)&&data[0]) parts.push(data[0]);
+      }
+      const total=parts.reduce((n,r)=>n+(Number(r.total_days)||0),0);
+      const present=parts.reduce((n,r)=>n+(Number(r.total_present)||0),0);
+      const encoded=parts.some(r=>!!r.encoded);
+      return {label:def.label,present:encoded?Math.min(Math.max(present,0),total):0,total,encoded};
+    }));
+    const attByMonth: Record<string, { present:number; total:number; encoded:boolean }> = {};
+    attResults.forEach(r=>{attByMonth[r.label]=r;});
 
     // ---------- Build PDF ----------
     const pdfDoc = await PDFDocument.create();

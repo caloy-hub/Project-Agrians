@@ -58,36 +58,7 @@ const SCHOOL_INFO = {
   schoolHead: "LYNDON MONTERON DUMAEL",
 };
 
-const TERM_MONTHS: { month:number; year:number; term:number; startDay?:number; endDay?:number }[] = [
-  { month:6,  year:2026, term:1, startDay:8 },
-  { month:7,  year:2026, term:1 },
-  { month:8,  year:2026, term:1 },
-  { month:9,  year:2026, term:1, endDay:15 },
-  { month:9,  year:2026, term:2, startDay:16 },
-  { month:10, year:2026, term:2 },
-  { month:11, year:2026, term:2 },
-  { month:12, year:2026, term:2, endDay:18 },
-  { month:1,  year:2027, term:3, startDay:4 },
-  { month:2,  year:2027, term:3 },
-  { month:3,  year:2027, term:3 },
-  { month:4,  year:2027, term:3, endDay:8 },
-];
 const MONTH_NAMES = ["","January","February","March","April","May","June","July","August","September","October","November","December"];
-
-function schoolDaysInMonth(month:number, year:number, term:number, holidays:{date:string}[]) {
-  const tm = TERM_MONTHS.find(t=>t.month===month&&t.year===year&&t.term===term);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const start = tm?.startDay || 1, end = tm?.endDay || daysInMonth;
-  const out: string[] = [];
-  for (let d=start; d<=end; d++) {
-    const dow = new Date(year, month-1, d).getDay();
-    if (dow===0||dow===6) continue;
-    const iso = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    if (holidays.some(h=>h.date===iso)) continue;
-    out.push(iso);
-  }
-  return out;
-}
 
 class Drawer {
   page: PDFPage; fReg: PDFFont; fBold: PDFFont;
@@ -199,12 +170,14 @@ serve(async (req: Request) => {
       // Mortality is school-wide on the official form, not per grade/section — pull separately.
       adminClient.from("profiles").select("status_date").eq("role","student").eq("enrollment_status","Deceased"),
     ]);
-    const days = schoolDaysInMonth(month, year, term, holidays||[]);
+    // Canonical calculation bridge: school dates and learner attendance totals
+    // are now read from the same database functions used by the learner UI.
+    const { data: dayRows, error: dayErr } = await adminClient.rpc("agrians_school_days", {
+      p_month:month,p_year:year,p_term:term
+    });
+    if (dayErr) throw new Error(dayErr.message);
+    const days = (dayRows||[]).map((r:any)=>String(r.date));
 
-    // The School Calendar tab is the authoritative monthly school-day count.
-    // SF4 uses the same real dates as SF2, but refuses to silently continue
-    // when the configured count and the date grid disagree. This keeps SF2 and
-    // SF4 mathematically consistent with the admin calendar.
     const { data: calendarRow } = await adminClient.from("school_calendar")
       .select("school_days").eq("month",month).eq("year",year).eq("term",term).maybeSingle();
     const configuredSchoolDays = calendarRow?.school_days != null ? Number(calendarRow.school_days) : null;
@@ -212,9 +185,9 @@ serve(async (req: Request) => {
     if (configuredSchoolDays != null && configuredSchoolDays !== actualSchoolDays) {
       return new Response(JSON.stringify({ error:
         `School calendar mismatch for ${MONTH_NAMES[month]} ${year}: Calendar is set to ${configuredSchoolDays} school days, `
-        + `but the SF4 date grid contains ${actualSchoolDays}. Add the missing non-school date(s) under School Calendar → Non-School Days, `
+        + `but the canonical SF4 date grid contains ${actualSchoolDays}. Add the missing non-school date(s) under School Calendar → Non-School Days, `
         + `or correct the monthly school-day count, then generate SF4 again.`
-      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }), { status:409, headers:{...corsHeaders,"Content-Type":"application/json"} });
     }
     const monthStart = days.length ? days[0] : `${year}-${String(month).padStart(2,"0")}-01`;
     const monthEnd = days.length ? days[days.length-1] : `${year}-${String(month).padStart(2,"0")}-28`;
@@ -226,38 +199,26 @@ serve(async (req: Request) => {
       : { data: [] as {id:string;name:string}[] };
     const adviserNameById = new Map((advisers||[]).map(a=>[a.id,a.name]));
 
-    const allIds = (allStudents||[]).map(s=>s.id);
-    let dailyRows: {student_id:string; status:string; date:string}[] = [];
-    if (allIds.length && days.length) {
-      const { data } = await adminClient.from("daily_attendance").select("student_id,status,date")
-        .in("student_id", allIds).gte("date", days[0]).lte("date", days[days.length-1]);
-      dailyRows = data || [];
-    }
     const studentById = new Map((allStudents||[]).map(s=>[s.id, s]));
-
-    // Same "a day with no saved row defaults to present" convention as
-    // generate-sf2's statusFor (see that file's comment) — a missing row
-    // means the grid hasn't been (re-)saved for that specific day yet, not
-    // that the learner was absent. Previously this only counted EXPLICIT
-    // "present" rows and silently skipped any day without a row at all,
-    // which massively deflated ADA/% for any section that hadn't had its
-    // Daily Attendance grid re-saved for literally every day of the month —
-    // while SF2, using the opposite (present-by-default) convention on the
-    // same underlying data, showed the mirror-image inflated numbers. That
-    // mismatch is what produced the too-low July SF4 figures.
-    const statusByKey = new Map<string, string>();
-    dailyRows.forEach(r => statusByKey.set(`${r.student_id}|${r.date}`, r.status));
     const presentByStudent = new Map<string, number>();
-    allIds.forEach(id => {
-      let count = 0;
-      days.forEach(dt => { if ((statusByKey.get(`${id}|${dt}`) || "present") === "present") count++; });
-      presentByStudent.set(id, count);
-    });
+    const encodedByStudent = new Map<string, boolean>();
+    const sectionIds = [...new Set((sectionsInScope||[]).map(s=>s.id))];
+
+    // One canonical section summary per section. This avoids rebuilding the
+    // attendance formula inside SF4 and guarantees SF4 uses the same totals as
+    // the learner dashboard and audit RPC.
+    for (const sectionId of sectionIds) {
+      const { data: summaryRows, error: summaryErr } = await adminClient.rpc("agrians_section_attendance_summary", {
+        p_section_id:sectionId,p_month:month,p_year:year,p_term:term
+      });
+      if (summaryErr) throw new Error(summaryErr.message);
+      (summaryRows||[]).forEach((r:any)=>{
+        presentByStudent.set(r.student_id, Number(r.total_present)||0);
+        encodedByStudent.set(r.student_id, !!r.encoded);
+      });
+    }
     const sectionsWithAttendance = new Set<string>();
-    dailyRows.forEach(r => {
-      const stu = studentById.get(r.student_id);
-      if (stu?.section_id) sectionsWithAttendance.add(stu.section_id);
-    });
+    (allStudents||[]).forEach(stu=>{ if(stu.section_id && encodedByStudent.get(stu.id)) sectionsWithAttendance.add(stu.section_id); });
 
     // (A)/(B)/(A+B) helper for one movement status across a group of students.
     const movementFigures = (group:any[], status:string) => {
@@ -355,7 +316,7 @@ serve(async (req: Request) => {
       const rowsThisGrade: RowData[] = [];
       secsForGrade.forEach(sec => {
         const group = (allStudents||[]).filter(s=>s.section_id===sec.id);
-        const adviserName = sec.adviser_id ? (adviserNameById.get(sec.adviser_id) || "—") : "(no adviser assigned)";
+        const adviserName = sec.adviser_id ? String(adviserNameById.get(sec.adviser_id) || "—") : "(no adviser assigned)";
         const row = buildRow(gradeLabel(g), group, { name: sec.name, adviser: adviserName, id: sec.id });
         if (row.notEncoded) incompleteSections.push(`${gradeLabel(g)} - ${sec.name}`);
         rowsThisGrade.push(row);
