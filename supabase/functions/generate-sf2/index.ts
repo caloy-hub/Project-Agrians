@@ -156,86 +156,142 @@ serve(async (req: Request) => {
     const females = (students||[]).filter(s=>s.gender==="Female");
     const ordered = [...males, ...females];
 
+    // Read the admin-configured school-day count. The calendar value is the
+    // official monthly count; the actual daily columns are still derived from
+    // weekdays minus explicitly registered non-school days because attendance
+    // needs real dates, not just a number.
+    const { data: calendarRow } = await adminClient.from("school_calendar")
+      .select("school_days").eq("month",month).eq("year",year).eq("term",term).maybeSingle();
+    const configuredSchoolDays = calendarRow?.school_days != null
+      ? Number(calendarRow.school_days) : null;
+    const actualSchoolDays = days.length;
+
+    // If the configured count and the date-based count disagree, do not silently
+    // produce an SF2 whose calendar says 19 days while the grid contains 21.
+    // The admin can resolve this by adding the missing non-school dates under
+    // Calendar → Non-School Days (Holidays / Suspensions).
+    if (configuredSchoolDays != null && configuredSchoolDays !== actualSchoolDays) {
+      return new Response(JSON.stringify({ error:
+        `School calendar mismatch for ${MONTH_NAMES[month]} ${year}: `
+        + `Calendar is set to ${configuredSchoolDays} school days, but the SF2 date grid `
+        + `currently contains ${actualSchoolDays} weekdays. `
+        + `Please add the ${Math.abs(actualSchoolDays-configuredSchoolDays)} non-school date(s) `
+        + `under School Calendar → Non-School Days, or correct the school-day count, then generate SF2 again.`
+      }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const pdfDoc = await PDFDocument.create();
     const fReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
-    const d = new Drawer(page, fReg, fBold);
 
-    let y = PAGE_H - MARGIN;
-    d.centered(PAGE_W/2, y, "Department of Education", fBold, 11); y -= 4.6*MM;
-    d.centered(PAGE_W/2, y, `${SCHOOL_INFO.region}  ·  ${SCHOOL_INFO.division}`, fReg, 9); y -= 4.4*MM;
-    d.centered(PAGE_W/2, y, SCHOOL_INFO.school, fBold, 11); y -= 4.6*MM;
-    d.centered(PAGE_W/2, y, `School ID: ${SCHOOL_INFO.schoolId}`, fReg, 8.5); y -= 6*MM;
-    d.centered(PAGE_W/2, y, "SCHOOL FORM 2 (SF2) — DAILY ATTENDANCE REPORT OF LEARNERS", fBold, 12.5); y -= 7*MM;
-
-    // Info line
-    d.text(MARGIN, y, `Grade & Section: ${section.grade_level} - ${section.name}`, fBold, 9.5);
-    d.text(MARGIN + 100*MM, y, `Month: ${MONTH_NAMES[month]} ${year}  (Term ${term})`, fBold, 9.5);
-    d.text(MARGIN + 195*MM, y, `Adviser: ${adviser?.name || "—"}`, fBold, 9.5);
-    y -= 6*MM;
-
-    // ---- Grid ----
     const nameColW = 46*MM, totalColW = 12*MM;
     const contentW = PAGE_W - 2*MARGIN;
     const dayColW = days.length>0 ? (contentW - nameColW - totalColW*2) / days.length : 0;
     const rowH = 5.1*MM, headerH = 9*MM;
-    const tableTop = y;
-
-    // Header row
-    d.rect(MARGIN, tableTop-headerH, contentW, headerH, 0.9);
-    d.rect(MARGIN, tableTop-headerH, nameColW, headerH, 0.9);
-    d.centered(MARGIN+nameColW/2, tableTop-headerH/2-1.2*MM, "Name of Learner", fBold, 7.5);
-    let xh = MARGIN+nameColW;
-    days.forEach(dd=>{
-      d.line(xh, tableTop-headerH, xh, tableTop, 0.5);
-      d.centered(xh+dayColW/2, tableTop-4*MM, String(dd.day), fBold, 6.5);
-      xh += dayColW;
-    });
-    d.line(xh, tableTop-headerH, xh, tableTop, 0.9);
-    d.centered(xh+totalColW/2, tableTop-headerH/2-1.2*MM, "Present", fBold, 6.8);
-    d.line(xh+totalColW, tableTop-headerH, xh+totalColW, tableTop, 0.5);
-    d.centered(xh+totalColW+totalColW/2, tableTop-headerH/2-1.2*MM, "Absent", fBold, 6.8);
-
-    let rowY = tableTop - headerH;
-    const drawGenderHeader = (label:string, count:number) => {
-      d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.6);
-      d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, `${label} (${count})`, fBold, 7.5);
-      rowY -= rowH;
-    };
-    const drawStudentRow = (s:any) => {
-      d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.5);
-      const nm = s.name.length>32 ? s.name.slice(0,31)+"…" : s.name;
-      d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, nm, fReg, 7.3);
-      let x = MARGIN+nameColW, present=0;
-      days.forEach(dd=>{
-        d.line(x, rowY-rowH, x, rowY, 0.35);
-        const st = statusFor(s.id, dd.date);
-        if (st==="present") present++;
-        d.centered(x+dayColW/2, rowY-rowH+1.6*MM, st==="present"?"":"X", fBold, 7);
-        x += dayColW;
-      });
-      const absent = days.length - present;
-      d.centered(x+totalColW/2, rowY-rowH+1.6*MM, String(present), fReg, 7.3);
-      d.line(x+totalColW, rowY-rowH, x+totalColW, rowY, 0.5);
-      d.centered(x+totalColW+totalColW/2, rowY-rowH+1.6*MM, String(absent), fReg, 7.3);
-      rowY -= rowH;
-      return {present, absent};
-    };
 
     let totalPresent=0, totalAbsent=0;
-    if (males.length) { drawGenderHeader("MALE", males.length); males.forEach(s=>{const r=drawStudentRow(s); totalPresent+=r.present; totalAbsent+=r.absent;}); }
-    if (females.length) { drawGenderHeader("FEMALE", females.length); females.forEach(s=>{const r=drawStudentRow(s); totalPresent+=r.present; totalAbsent+=r.absent;}); }
-    if (ordered.length===0) { d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.5); d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, "No learners in this section.", fReg, 8); rowY-=rowH; }
+    let pageNo=0;
 
-    d.line(MARGIN, rowY, MARGIN+contentW, rowY, 0.9);
+    const drawGridPage = (pageStudents:any[], showPageLabel=false) => {
+      pageNo++;
+      const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      const d = new Drawer(page, fReg, fBold);
+      let y = PAGE_H - MARGIN;
 
-    // ---- Page 2: monthly summary + signatures ----
-    // The official SF2 is a two-page form: the daily grid on page 1, and the
-    // monthly summary/certification on page 2. Previously both were packed
-    // onto one page, so for sections with enough rows the summary/signature
-    // block ran past the bottom margin — this puts the summary on its own
-    // page every month, regardless of how many rows the grid needed.
+      d.centered(PAGE_W/2, y, "Department of Education", fBold, 11); y -= 4.6*MM;
+      d.centered(PAGE_W/2, y, `${SCHOOL_INFO.region}  ·  ${SCHOOL_INFO.division}`, fReg, 9); y -= 4.4*MM;
+      d.centered(PAGE_W/2, y, SCHOOL_INFO.school, fBold, 11); y -= 4.6*MM;
+      d.centered(PAGE_W/2, y, `School ID: ${SCHOOL_INFO.schoolId}`, fReg, 8.5); y -= 6*MM;
+      d.centered(PAGE_W/2, y, "SCHOOL FORM 2 (SF2) — DAILY ATTENDANCE REPORT OF LEARNERS", fBold, 12.5); y -= 7*MM;
+
+      d.text(MARGIN, y, `Grade & Section: ${section.grade_level} - ${section.name}`, fBold, 9.5);
+      d.text(MARGIN + 100*MM, y, `Month: ${MONTH_NAMES[month]} ${year}  (Term ${term})`, fBold, 9.5);
+      d.text(MARGIN + 195*MM, y, `Adviser: ${adviser?.name || "—"}`, fBold, 9.5);
+      if (showPageLabel) d.text(PAGE_W-MARGIN-34*MM, y, `Page ${pageNo}`, fReg, 8);
+      y -= 6*MM;
+
+      const tableTop = y;
+      d.rect(MARGIN, tableTop-headerH, contentW, headerH, 0.9);
+      d.rect(MARGIN, tableTop-headerH, nameColW, headerH, 0.9);
+      d.centered(MARGIN+nameColW/2, tableTop-headerH/2-1.2*MM, "Name of Learner", fBold, 7.5);
+      let xh = MARGIN+nameColW;
+      days.forEach(dd=>{
+        d.line(xh, tableTop-headerH, xh, tableTop, 0.5);
+        d.centered(xh+dayColW/2, tableTop-4*MM, String(dd.day), fBold, 6.5);
+        xh += dayColW;
+      });
+      d.line(xh, tableTop-headerH, xh, tableTop, 0.9);
+      d.centered(xh+totalColW/2, tableTop-headerH/2-1.2*MM, "Present", fBold, 6.8);
+      d.line(xh+totalColW, tableTop-headerH, xh+totalColW, tableTop, 0.5);
+      d.centered(xh+totalColW+totalColW/2, tableTop-headerH/2-1.2*MM, "Absent", fBold, 6.8);
+
+      let rowY = tableTop - headerH;
+      const drawGenderHeader = (label:string, count:number) => {
+        d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.6);
+        d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, `${label} (${count})`, fBold, 7.5);
+        rowY -= rowH;
+      };
+      const drawStudentRow = (s:any) => {
+        d.rect(MARGIN, rowY-rowH, contentW, rowH, 0.5);
+        const nm = s.name.length>32 ? s.name.slice(0,31)+"…" : s.name;
+        d.text(MARGIN+2*MM, rowY-rowH+1.6*MM, nm, fReg, 7.3);
+        let x = MARGIN+nameColW, present=0;
+        days.forEach(dd=>{
+          d.line(x, rowY-rowH, x, rowY, 0.35);
+          const st = statusFor(s.id, dd.date);
+          if (st==="present") present++;
+          d.centered(x+dayColW/2, rowY-rowH+1.6*MM, st==="present"?"":"X", fBold, 7);
+          x += dayColW;
+        });
+        const absent = days.length - present;
+        d.centered(x+totalColW/2, rowY-rowH+1.6*MM, String(present), fReg, 7.3);
+        d.line(x+totalColW, rowY-rowH, x+totalColW, rowY, 0.5);
+        d.centered(x+totalColW+totalColW/2, rowY-rowH+1.6*MM, String(absent), fReg, 7.3);
+        rowY -= rowH;
+        totalPresent += present; totalAbsent += absent;
+      };
+
+      let used=0;
+      const maxRows = Math.max(1, Math.floor((tableTop-headerH-(MARGIN+6*MM))/rowH));
+      let lastGender="";
+      for (const s of pageStudents) {
+        const gender = s.gender==="Male" ? "MALE" : "FEMALE";
+        if (gender!==lastGender) {
+          drawGenderHeader(gender, pageStudents.filter(x=>(x.gender==="Male"?"MALE":"FEMALE")===gender).length);
+          lastGender=gender; used++;
+        }
+        drawStudentRow(s); used++;
+      }
+      d.line(MARGIN, rowY, MARGIN+contentW, rowY, 0.9);
+      return {maxRows,used};
+    };
+
+    // Paginate the daily grid dynamically. The summary/certification is always
+    // placed on its own final page, so a large section naturally becomes 3+
+    // pages without ever pushing the computation/signature block off-page.
+    // With the current A4-landscape geometry, 26 learner rows plus a gender
+    // header fit safely on one grid page. Keep this explicit and conservative
+    // so the table never collides with the footer/margin.
+    const maxStudentRowsPerGridPage = 26;
+    let remaining = [...ordered];
+    let firstPage=true;
+    while (remaining.length) {
+      // Prefer not to split a gender group when it fits, but never let a large
+      // group overflow a page.
+      let take = Math.min(maxStudentRowsPerGridPage, remaining.length);
+      if (take < remaining.length) {
+        const boundary = remaining[take-1]?.gender;
+        const nextGender = remaining[take]?.gender;
+        if (boundary===nextGender && take>8) take--;
+      }
+      const chunk=remaining.slice(0,take);
+      drawGridPage(chunk,!firstPage);
+      remaining=remaining.slice(take);
+      firstPage=false;
+    }
+    if (!ordered.length) drawGridPage([],false);
+
+    // ---- Final page: monthly summary + computation/signatures ----
     const page2 = pdfDoc.addPage([PAGE_W, PAGE_H]);
     const d2 = new Drawer(page2, fReg, fBold);
     let y2 = PAGE_H - MARGIN;

@@ -1,5 +1,5 @@
 // ============================================================
-//  App.jsx — FINAL COMPLETE VERSION v5
+//  App.jsx — FINAL COMPLETE VERSION v6
 //  Maria Cristina P. Belcar Agricultural High School
 //  School ID: 304342 | S.Y. 2026–2027
 //  Dept. of Education · Region XI · Division of Davao City
@@ -86,6 +86,76 @@ const css = `
   button{cursor:pointer;border:none;border-radius:var(--radius-md);font-weight:600;
     font-family:var(--font-sans);transition:all .2s var(--ease-in-out);}
   @keyframes spin{to{transform:rotate(360deg)}}
+
+.agrians-login{min-height:100vh;position:relative;overflow:hidden;display:flex;flex-direction:column;
+  background:radial-gradient(circle at 78% 18%,#3e8a6340 0,transparent 30%),
+             radial-gradient(circle at 18% 82%,#f5c84226 0,transparent 27%),
+             linear-gradient(135deg,#071b14 0%,#102f23 42%,#173d2d 72%,#0a2018 100%);
+  color:#fff;font-family:var(--font-sans);}
+.login-grid{position:absolute;inset:0;opacity:.08;background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+  background-size:44px 44px;mask-image:linear-gradient(to bottom,black,transparent 90%);pointer-events:none;}
+.login-orb{position:absolute;border-radius:50%;filter:blur(1px);pointer-events:none;}
+.login-orb-a{width:420px;height:420px;right:-150px;top:-150px;background:#5ca37d26;box-shadow:0 0 100px #5ca37d20;animation:loginPulse 7s ease-in-out infinite;}
+.login-orb-b{width:300px;height:300px;left:-130px;bottom:-130px;background:#f5c84216;box-shadow:0 0 90px #f5c84218;animation:loginPulse 9s ease-in-out infinite reverse;}
+.login-header{position:relative;z-index:2;display:flex;align-items:center;gap:13px;padding:22px clamp(20px,5vw,70px);
+  border-bottom:1px solid #ffffff14;background:#071b14aa;backdrop-filter:blur(16px);}
+.login-school-mark{width:54px;height:54px;border-radius:16px;padding:3px;background:linear-gradient(145deg,#f5c842,#8fc49a);
+  box-shadow:0 8px 24px #00000035;overflow:hidden;flex-shrink:0;}
+.login-school-mark img{width:100%;height:100%;object-fit:cover;border-radius:13px;}
+.login-dep{font-size:9px;letter-spacing:1.1px;color:#b7d5bf;font-weight:700;margin-bottom:3px;}
+.login-school-name{font-size:clamp(13px,1.7vw,18px);font-weight:900;letter-spacing:-.2px;}
+.login-school-sub{font-size:10px;color:#8fb39d;margin-top:3px;}
+.login-main{position:relative;z-index:2;width:min(1120px,calc(100% - 32px));margin:auto;display:grid;grid-template-columns:1fr minmax(360px,470px);
+  gap:clamp(34px,7vw,90px);align-items:center;padding:42px 0;}
+.login-brand-panel{padding:20px 10px;text-align:left;}
+.login-brand-logo-wrap{position:relative;width:146px;height:146px;margin-bottom:22px;display:grid;place-items:center;animation:loginFloat 5s ease-in-out infinite;}
+.login-ring{position:absolute;inset:-13px;border:1px solid #f5c84275;border-radius:50%;box-shadow:0 0 0 10px #f5c84208,0 0 50px #5ca37d22;}
+.login-ring:after{content:"";position:absolute;width:8px;height:8px;border-radius:50%;background:#f5c842;top:15px;right:17px;box-shadow:0 0 18px #f5c842;}
+.login-brand-logo{width:146px;height:146px;object-fit:cover;border-radius:50%;border:4px solid #f5c842;box-shadow:0 18px 55px #00000055;}
+.login-project{font-size:clamp(34px,5vw,58px);font-weight:950;letter-spacing:-2px;line-height:1;}
+.login-project span{color:#f5c842;}
+.login-fullname{max-width:560px;color:#c5dccd;font-size:13px;line-height:1.7;margin-top:12px;}
+.login-tagline{font-size:15px;color:#fff;font-weight:800;font-style:italic;margin-top:13px;}
+.login-seed-line{display:flex;align-items:center;gap:9px;margin-top:20px;color:#f5c842;font-size:17px;}
+.login-seed-line i{height:1px;width:38px;background:linear-gradient(90deg,#f5c842,#5ca37d);opacity:.7;}
+.login-purpose{max-width:520px;color:#8fb39d;font-size:11px;line-height:1.7;margin-top:17px;}
+.login-card{position:relative;background:#fffffffa;color:#0f172a;border:1px solid #ffffff55;border-radius:26px;padding:27px;
+  box-shadow:0 28px 80px #00000055,0 4px 18px #00000020;backdrop-filter:blur(20px);overflow:hidden;}
+.login-card:before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:linear-gradient(90deg,#1f4638,#5ca37d,#f5c842,#5ca37d,#1f4638);}
+.login-card:after{content:"";position:absolute;top:0;left:-50%;width:35%;height:4px;background:#fff8;filter:blur(3px);animation:loginShimmer 5s linear infinite;}
+.login-card-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:20px;}
+.login-eyebrow{font-size:9px;font-weight:900;letter-spacing:1.4px;color:#3e8a63;margin-bottom:5px;}
+.login-card h1{font-size:27px;letter-spacing:-.7px;line-height:1.1;}
+.login-card-top p{font-size:11px;color:#64748b;margin-top:5px;}
+.login-lock{width:43px;height:43px;border-radius:14px;background:#eef6ec;display:grid;place-items:center;font-size:20px;}
+.login-role-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:5px;background:#eef6ec;border-radius:14px;margin-bottom:11px;}
+.login-role{padding:10px 5px;border-radius:10px;background:transparent;color:#64748b;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;}
+.login-role-icon{font-size:17px;line-height:1;}
+.login-role.active{background:#1f4638;color:#fff;box-shadow:0 6px 16px #1f46383d;transform:translateY(-1px);}
+.login-selected{display:flex;align-items:center;gap:9px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:9px 11px;margin-bottom:15px;}
+.login-selected>span{font-size:19px}.login-selected b{display:block;font-size:11px}.login-selected small{display:block;color:#64748b;font-size:9px;margin-top:2px;}
+.login-label{display:block;font-size:10px;font-weight:800;color:#475569;margin:11px 0 5px;letter-spacing:.2px;}
+.login-input-wrap{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1.5px solid #dbe4e8;border-radius:11px;padding:0 11px;transition:.2s;}
+.login-input-wrap:focus-within{border-color:#3e8a63;box-shadow:0 0 0 4px #3e8a6315;background:#fff;}
+.login-input-wrap>span{font-size:14px}.login-input-wrap input{border:0!important;box-shadow:none!important;background:transparent!important;padding:11px 3px!important;font-size:12px;}
+.login-error{display:flex;gap:7px;align-items:flex-start;background:#fff1f2;border:1px solid #fecdd3;color:#be123c;border-radius:10px;padding:9px 10px;font-size:10.5px;margin-top:12px;line-height:1.45;}
+.login-submit{position:relative;overflow:hidden;width:100%;margin-top:14px;padding:13px 15px;border-radius:12px;color:#fff;
+  background:linear-gradient(135deg,#1f4638,#3e8a63);box-shadow:0 10px 22px #1f46383b;display:flex;justify-content:space-between;align-items:center;font-size:12px;}
+.login-submit:before{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,#ffffff22 50%,transparent 65%);transform:translateX(-120%);}
+.login-submit:hover:before{animation:loginShimmer .9s ease;}
+.login-submit:hover{transform:translateY(-1px);box-shadow:0 13px 28px #1f463846;}
+.login-submit:disabled{opacity:.7;cursor:wait;transform:none;}
+.login-submit b{font-size:18px;line-height:1;}
+.login-security{display:flex;align-items:center;justify-content:center;gap:5px;color:#94a3b8;font-size:8.5px;margin-top:13px;text-align:center;}
+.login-security span{color:#3e8a63;font-size:8px;}
+.login-footer{position:relative;z-index:2;display:flex;justify-content:center;gap:9px;flex-wrap:wrap;padding:16px 20px 22px;color:#759783;font-size:9px;letter-spacing:.2px;}
+@media(max-width:800px){
+  .login-header{padding:16px 18px}.login-main{grid-template-columns:1fr;gap:12px;padding:28px 0;}
+  .login-brand-panel{text-align:center;padding:5px 8px}.login-brand-logo-wrap{margin:0 auto 18px;width:105px;height:105px}.login-brand-logo{width:105px;height:105px;}
+  .login-project{font-size:38px}.login-fullname,.login-purpose{margin-left:auto;margin-right:auto}.login-seed-line{justify-content:center;}
+  .login-card{width:min(470px,100%);margin:0 auto;padding:22px;}
+}
+@media(max-width:430px){.login-dep{font-size:7.5px}.login-school-name{font-size:12px}.login-school-mark{width:46px;height:46px}.login-card{border-radius:20px}.login-project{font-size:32px;}}
 `;
 
 const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null;
@@ -1168,7 +1238,8 @@ const CalendarPanel = ({ calendar, onSave, holidays=[], onAddHoliday, onDeleteHo
         📅 School Calendar
       </div>
       <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>
-        Encode the number of school days per month. Adviser attendance is based on these values.
+        Set the official number of school days per month. This value is authoritative for SF2/SF4.
+        To make the daily attendance dates match it exactly, record holidays/suspensions below as Non-School Days.
       </div>
       {[1,2,3].map(term=>{
         const termLabel = term===1?"Term 1: June 8 – Sept 15, 2026"
@@ -1197,6 +1268,15 @@ const CalendarPanel = ({ calendar, onSave, holidays=[], onAddHoliday, onDeleteHo
                       💾
                     </Btn>
                   </div>
+                  {(()=>{
+                    const actual=schoolDaysInMonth(m,holidays).length;
+                    const configured=parseInt(daysMap[key]||"0",10);
+                    if (!configured) return null;
+                    if (configured===actual) return <div style={{marginTop:6,fontSize:10.5,color:T.green2}}>✓ Calendar and date grid agree: {actual} school days.</div>;
+                    return <div style={{marginTop:6,fontSize:10.5,color:"#9a6700",background:"#fff8df",border:"1px solid #f0d98a",borderRadius:6,padding:"6px 8px",lineHeight:1.45}}>
+                      ⚠️ Configured: <strong>{configured}</strong> · Date grid: <strong>{actual}</strong>. Add/remove Non-School Days below so the dates and monthly count agree before generating SF2/SF4.
+                    </div>;
+                  })()}
                 </Card>
               );
             })}
@@ -1258,7 +1338,6 @@ const Login = () => {
   const doLogin=async()=>{
     setErr(""); setLoading(true);
     try {
-      // Check if student access is locked
       if (role==="student") {
         const { data:lockSetting } = await supabase.from("app_settings")
           .select("value").eq("key","student_access_locked").single();
@@ -1279,48 +1358,104 @@ const Login = () => {
     setLoading(false);
   };
 
+  const roleMeta = {
+    student:{icon:"🎓",label:"Learner",hint:"Access grades, attendance, lessons and learning tools."},
+    teacher:{icon:"👨‍🏫",label:"Teacher",hint:"Manage classes, attendance, grades and reports."},
+    admin:{icon:"🛡️",label:"Administrator",hint:"Manage the school-wide academic records and settings."},
+  };
+  const meta=roleMeta[role];
+
   return (
-    <div style={{minHeight:"100vh",
-      background:"linear-gradient(160deg,#EEF6EC 0%,#f8fafc 50%,#C9E0BE 100%)",
-      display:"flex",flexDirection:"column"}}>
-      <SchoolHeader/>
-      <div style={{flex:1,display:"flex",flexDirection:"column",
-        alignItems:"center",justifyContent:"center",padding:"20px 20px 40px 20px"}}>
-        <AgriansBranding/>
-        <Card className="dialog-sm" style={{boxShadow:"0 8px 32px #00000015",marginTop:16}}>
-          <div style={{textAlign:"center",marginBottom:20}}>
-            <div style={{fontSize:22,fontWeight:800,color:T.green1}}>Welcome</div>
-            <div style={{fontSize:12,color:T.textMuted}}>School Year 2026–2027</div>
+    <div className="agrians-login">
+      <div className="login-orb login-orb-a"/>
+      <div className="login-orb login-orb-b"/>
+      <div className="login-grid"/>
+      <div className="login-header">
+        <div className="login-school-mark">
+          <img src={mcpbahsLogo} alt="MCPBAHS Logo"/>
+        </div>
+        <div>
+          <div className="login-dep">DEPARTMENT OF EDUCATION · REGION XI · DAVAO REGION</div>
+          <div className="login-school-name">Maria Cristina P. Belcar Agricultural High School</div>
+          <div className="login-school-sub">School ID 304342 · S.Y. 2026–2027</div>
+        </div>
+      </div>
+
+      <main className="login-main">
+        <section className="login-brand-panel">
+          <div className="login-brand-logo-wrap">
+            <div className="login-ring"/>
+            <img src={agriansLogo} alt="Project AGRIANS Logo" className="login-brand-logo"/>
           </div>
-          <div style={{display:"flex",gap:4,marginBottom:18,background:T.bgPanel,borderRadius:8,padding:4}}>
+          <div className="login-project">Project <span>AGRIANS</span></div>
+          <div className="login-fullname">Academic Grade Release &amp; Interactive Appointment Network System</div>
+          <div className="login-tagline">No paper. No waiting. Just progress.</div>
+          <div className="login-seed-line">
+            <span>🌱</span><i/><span>📚</span><i/><span>📊</span><i/><span>🌾</span>
+          </div>
+          <p className="login-purpose">
+            A unified digital platform for academic records, attendance, appointments and school reporting.
+          </p>
+        </section>
+
+        <section className="login-card">
+          <div className="login-card-top">
+            <div>
+              <div className="login-eyebrow">SECURE SCHOOL PORTAL</div>
+              <h1>Welcome back</h1>
+              <p>Choose your access level to continue.</p>
+            </div>
+            <div className="login-lock">🔐</div>
+          </div>
+
+          <div className="login-role-grid">
             {["student","teacher","admin"].map(r=>(
-              <button key={r} onClick={()=>setRole(r)} style={{
-                flex:1,padding:"8px 4px",borderRadius:6,fontSize:12,fontWeight:700,
-                background:role===r?T.green3:"transparent",color:role===r?T.white:T.textMuted,
-                border:"none",cursor:"pointer",textTransform:"capitalize"}}>{r}</button>
+              <button key={r} type="button" className={`login-role ${role===r?"active":""}`}
+                onClick={()=>{setRole(r);setErr("");}}>
+                <span className="login-role-icon">{roleMeta[r].icon}</span>
+                <span>{roleMeta[r].label}</span>
+              </button>
             ))}
           </div>
-          <label style={{fontSize:12,color:T.textMuted,display:"block",marginBottom:4}}>
-            {role==="student"?"LRN (Learner Reference Number)":"Email Address"}
-          </label>
-          <input value={id} onChange={e=>setId(e.target.value)}
-            placeholder={role==="student"?"Enter your 12-digit LRN":"e.g. user@mcpbahs.edu.ph"}
-            onKeyDown={e=>e.key==="Enter"&&doLogin()} style={{marginBottom:12}}/>
-          <label style={{fontSize:12,color:T.textMuted,display:"block",marginBottom:4}}>Password</label>
-          <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
-            placeholder="Enter password" onKeyDown={e=>e.key==="Enter"&&doLogin()}
-            style={{marginBottom:16}}/>
-          {err&&<div style={{color:T.red,fontSize:12,marginBottom:10,
-            background:T.red+"15",padding:"8px 12px",borderRadius:6}}>{err}</div>}
-          <Btn onClick={doLogin} disabled={loading} style={{width:"100%",padding:"12px",fontSize:15}}>
-            {loading?"Logging in...":"🔐 Login"}
-          </Btn>
-          <div style={{display:"flex",height:4,borderRadius:4,overflow:"hidden",marginTop:16}}>
-            <div style={{flex:1,background:T.blue}}/><div style={{flex:1,background:T.red}}/>
-            <div style={{flex:1,background:T.yellow}}/>
+
+          <div className="login-selected">
+            <span>{meta.icon}</span>
+            <div><b>{meta.label} access</b><small>{meta.hint}</small></div>
           </div>
-        </Card>
-      </div>
+
+          <label className="login-label">{role==="student"?"LRN (Learner Reference Number)":"Email Address"}</label>
+          <div className="login-input-wrap">
+            <span>{role==="student"?"🪪":"✉️"}</span>
+            <input value={id} onChange={e=>setId(e.target.value)}
+              placeholder={role==="student"?"Enter your 12-digit LRN":"e.g. user@mcpbahs.edu.ph"}
+              onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+          </div>
+
+          <label className="login-label">Password</label>
+          <div className="login-input-wrap">
+            <span>🔑</span>
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+              placeholder="Enter password" onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+          </div>
+
+          {err&&<div className="login-error">⚠️ <span>{err}</span></div>}
+
+          <button type="button" className="login-submit" onClick={doLogin} disabled={loading}>
+            <span>{loading?"Authenticating…":"Sign in to AGRIANS"}</span>
+            <b>{loading?"⏳":"→"}</b>
+          </button>
+
+          <div className="login-security">
+            <span>●</span> Your credentials are protected by secure school authentication.
+          </div>
+        </section>
+      </main>
+
+      <footer className="login-footer">
+        <span>Planting good seeds in the hearts of the learners.</span>
+        <span>•</span>
+        <span>AGRIANS Digital School Platform</span>
+      </footer>
     </div>
   );
 };
@@ -1965,17 +2100,16 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       .upsert(rows,{onConflict:"student_id,date"});
     if (error){notify("❌ "+error.message);setSavingAtt(false);return;}
 
-    // Keep the legacy monthly summary (used elsewhere in the app) and the
-    // school_calendar day count in sync with the real daily grid.
+    // Keep the legacy monthly summary (used elsewhere in the app).
+    // IMPORTANT: do NOT overwrite school_calendar here. The admin calendar is
+    // the authoritative monthly school-day setting; attendance encoding must
+    // never silently change it.
     const {month,year,term}=selAttMonth;
     const monthlyRows=classStudents.map(s=>{
       const presentCount=days.filter(d=>getDailyStatus(s.id,d.date)==="present").length;
       return {student_id:s.id,month,year,term,days_present:presentCount,encoded_by:profile.id};
     });
     await supabase.from("attendance").upsert(monthlyRows,{onConflict:"student_id,month,year,term"});
-    await supabase.from("school_calendar")
-      .upsert({month,year,term,school_days:days.length},{onConflict:"month,year,term"});
-
     setSavingAtt(false);
     notify("✅ Daily attendance saved!");
     fetchData();
@@ -3994,7 +4128,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
             </Card>
 
             <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:6}}>
-              School Form 4 — Movement & Attendance Report
+              School Form 4 — Monthly Learner's Movement & Attendance
             </div>
             <Card style={{marginBottom:12}}>
               <div style={{display:"grid",gap:8}}>
@@ -4027,14 +4161,14 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     <strong>{sf4Incomplete.join(", ")}</strong>
                   </div>
                 )}
-                <Btn onClick={generateSF4} disabled={genBusy}>📄 Generate SF4 PDF ({sf4Level})</Btn>
+                <Btn onClick={generateSF4} disabled={genBusy}>📄 Generate DepEd SF4 PDF ({sf4Level})</Btn>
               </div>
             </Card>
             <div style={{fontSize:11,color:T.textMuted,padding:"0 4px"}}>
-              SF2 uses the Daily Attendance grid each adviser encodes for their section, and
-              will refuse to generate if that section hasn't saved attendance for the selected
-              month yet. SF4 movement figures (transferred in/out, dropped out) come from each
-              learner's Enrollment Status — edit a learner in the Students tab to update it.
+              SF2 and SF4 use the same School Calendar and Daily Attendance dates. The monthly school-day count is the admin-configured value, and
+              the generators will stop when the configured school-day count does not match the actual date grid, preventing inconsistent reports. SF2 will also refuse to generate if that section hasn't saved attendance for the selected
+              month yet. SF4 follows the DepEd SF4 structure for registered learners, attendance, NLPA, transferred out/in, and mortality. Movement figures come from each
+              learner's Enrollment Status — edit a learner in the Students tab to update it. The generated form uses the official-style landscape/legal table structure and M/F/T groupings.
               A section that hasn't saved Daily Attendance for the month is excluded from that
               row's ADA / % Attendance (marked *) rather than counted as 0% — generate its SF2
               first, or re-generate SF4 once it's encoded.
