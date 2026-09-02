@@ -2332,109 +2332,143 @@ const SubjectGradeReview = ({profile, subjects, subjectAssignments, sections}) =
 // ─── TEACHER / ADVISER / CURRICULUM HEAD ANALYTICS ─────────────────────
 const TeacherAnalytics = ({profile, subjects, subjectAssignments, sections, mySection, classStudents}) => {
   const [term,setTerm]=useState(1);
+  const [selSubject,setSelSubject]=useState("");
+  const [selSection,setSelSection]=useState("");
   const [students,setStudents]=useState([]);
-  const [subjectsScope,setSubjectsScope]=useState([]);
   const [grades,setGrades]=useState([]);
-  const [loading,setLoading]=useState(true);
+  const [loading,setLoading]=useState(false);
 
   const isCH=!!profile.is_curriculum_head;
   const isAdviser=!!mySection;
+  const availableSubjects=subjects.filter(s=>!isMapehParent(s,subjects));
+
+  // Build the subject list from the teacher's assignments, not from a single
+  // joined Supabase relationship. This keeps every assigned subject visible.
+  const assignedSubjectIds=[...new Set(subjectAssignments.map(a=>a.subject_id).filter(Boolean))];
+  const teacherSubjects=isCH
+    ? availableSubjects.filter(s=>s.grade_level===profile.assigned_grade_level)
+    : isAdviser
+      ? availableSubjects.filter(s=>s.grade_level===mySection?.grade_level)
+      : availableSubjects.filter(s=>assignedSubjectIds.includes(s.id));
+
+  const selectedSubject=teacherSubjects.find(s=>s.id===selSubject);
+  const assignments=selectedSubject
+    ? subjectAssignments.filter(a=>a.subject_id===selectedSubject.id)
+    : [];
+  const assignedSectionIds=[...new Set(assignments.map(a=>a.section_id).filter(Boolean))];
+  const gradeWide=assignments.some(a=>!a.section_id);
+  const sectionOptions=isCH
+    ? sections.filter(s=>s.grade_level===profile.assigned_grade_level)
+    : isAdviser
+      ? sections.filter(s=>s.id===mySection?.id)
+      : gradeWide
+        ? sections.filter(s=>s.grade_level===selectedSubject?.grade_level)
+        : sections.filter(s=>assignedSectionIds.includes(s.id));
 
   useEffect(()=>{
+    if(!selSubject || !teacherSubjects.some(s=>s.id===selSubject)) {
+      setSelSubject(teacherSubjects[0]?.id||"");
+      setSelSection("");
+    }
+  },[teacherSubjects.map(s=>s.id).join(','),mySection?.id,profile.assigned_grade_level]);
+
+  useEffect(()=>{
+    if(!selectedSubject) { setSelSection(""); return; }
+    const valid=sectionOptions.some(s=>s.id===selSection);
+    if(!valid) setSelSection(isAdviser?mySection?.id:(assignedSectionIds[0]||sectionOptions[0]?.id||""));
+  },[selSubject,sectionOptions.map(s=>s.id).join(','),mySection?.id]);
+
+  useEffect(()=>{
+    if(!selectedSubject) { setStudents([]); setGrades([]); return; }
     (async()=>{
       setLoading(true);
-      let scopedStudents=[]; let scopedSubjects=[];
-      if (isCH) {
-        const [stuR,subR]=await Promise.all([
-          supabase.from("profiles").select("*").eq("role","student").eq("grade_level",profile.assigned_grade_level),
-          supabase.from("subjects").select("*").eq("grade_level",profile.assigned_grade_level)
-        ]);
-        scopedStudents=sortStudentsMaleFirst(stuR.data||[]); scopedSubjects=subR.data||[];
-      } else if (isAdviser) {
-        scopedStudents=classStudents||[];
-        const {data}=await supabase.from("subjects").select("*").eq("grade_level",mySection.grade_level);
-        scopedSubjects=data||[];
+      let scopedStudents=[];
+      if(isAdviser && classStudents?.length) {
+        scopedStudents=classStudents;
       } else {
-        const usableAssignments=subjectAssignments.length?subjectAssignments:subjects.map(s=>({subject_id:s.id,teacher_id:profile.id,section_id:s.section_id||null}));
-        const subIds=[...new Set(usableAssignments.map(a=>a.subject_id))];
-        scopedSubjects=subjects.filter(s=>subIds.includes(s.id));
-        const sectionIds=[...new Set(usableAssignments.map(a=>a.section_id).filter(Boolean))];
-        const gradeLevels=[...new Set(scopedSubjects.map(s=>s.grade_level).filter(Boolean))];
-        let q=supabase.from("profiles").select("*").eq("role","student");
-        if (sectionIds.length) {
-          const {data}=await q.in("section_id",sectionIds); scopedStudents=data||[];
-        } else if (gradeLevels.length) {
-          const {data}=await q.in("grade_level",gradeLevels); scopedStudents=data||[];
-        }
-        scopedStudents=sortStudentsMaleFirst(scopedStudents);
+        let q=supabase.from("profiles").select("*").eq("role","student").eq("grade_level",selectedSubject.grade_level);
+        if(selSection) q=q.eq("section_id",selSection);
+        else if(!isCH && assignedSectionIds.length && !gradeWide) q=q.in("section_id",assignedSectionIds);
+        const {data}=await q.order("name");
+        scopedStudents=data||[];
       }
-      const ids=scopedStudents.map(s=>s.id), subIds=scopedSubjects.map(s=>s.id);
+      if(selectedSubject.tve_qualification) scopedStudents=scopedStudents.filter(st=>st.tve_qualification===selectedSubject.tve_qualification);
+      const studentIds=scopedStudents.map(s=>s.id);
       let g=[];
-      if(ids.length&&subIds.length){ const {data}=await supabase.from("grades").select("*").in("student_id",ids).in("subject_id",subIds); g=data||[]; }
-      setStudents(scopedStudents); setSubjectsScope(scopedSubjects); setGrades(g); setLoading(false);
+      if(studentIds.length){
+        const {data}=await supabase.from("grades").select("*").in("student_id",studentIds).eq("subject_id",selectedSubject.id);
+        g=data||[];
+      }
+      setStudents(sortStudentsMaleFirst(scopedStudents));
+      setGrades(g);
+      setLoading(false);
     })();
-  },[profile.id,profile.is_curriculum_head,profile.assigned_grade_level,mySection?.id,classStudents.length,subjectAssignments.length,subjects.length]);
+  },[selectedSubject?.id,selectedSubject?.grade_level,selectedSubject?.tve_qualification,selSection,term,isAdviser,classStudents?.length,assignedSectionIds.join(','),gradeWide]);
 
-  const applicableFor=(sub)=>{
-    if (!sub || sub.parent_subject_id) return [];
-    let eligible=students.filter(st=>st.grade_level===sub.grade_level);
-    if (isAdviser) eligible=eligible.filter(st=>st.section_id===mySection.id);
-    const ass=subjectAssignments.filter(a=>a.subject_id===sub.id);
-    if (!isCH && !isAdviser) {
-      const sectionIds=ass.map(a=>a.section_id).filter(Boolean);
-      const gradeWide=ass.some(a=>!a.section_id);
-      if(sectionIds.length&&!gradeWide) eligible=eligible.filter(st=>sectionIds.includes(st.section_id));
-    } else if (isAdviser) {
-      if(sub.section_id && sub.section_id!==mySection.id) return [];
-    }
-    if(sub.tve_qualification) eligible=eligible.filter(st=>st.tve_qualification===sub.tve_qualification);
-    return eligible;
-  };
-  const gradeValue=(st,sub)=>{
+  const gradeValue=(st)=>{
     if(term==="final"){
-      const vals=[1,2,3].map(t=>grades.find(g=>g.student_id===st.id&&g.subject_id===sub.id&&g.term===t)?.grade).filter(v=>v!=null).map(Number);
+      const vals=[1,2,3].map(t=>grades.find(g=>g.student_id===st.id&&g.term===t)?.grade).filter(v=>v!=null).map(Number);
       return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
     }
-    return grades.find(g=>g.student_id===st.id&&g.subject_id===sub.id&&g.term===term)?.grade??null;
+    return grades.find(g=>g.student_id===st.id&&g.term===term)?.grade??null;
   };
-  const rows=subjectsScope.filter(s=>!isMapehParent(s,subjectsScope)&&s.grade_level).map(sub=>{
-    const eligible=applicableFor(sub); const vals=eligible.map(st=>gradeValue(st,sub)).filter(v=>v!=null).map(Number);
-    const lacking=eligible.filter(st=>{const v=gradeValue(st,sub);return v!=null&&Number(v)<75;});
-    const missing=eligible.filter(st=>gradeValue(st,sub)==null);
-    const mean=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*100)/100:null;
-    return {sub,eligible,vals,mean,pass:vals.length?Math.round(vals.filter(v=>v>=75).length/vals.length*100):0,lacking,missing};
-  }).filter(r=>r.eligible.length);
-  const allVals=rows.flatMap(r=>r.vals), overall=allVals.length?Math.round(allVals.reduce((a,b)=>a+b,0)/allVals.length*100)/100:null;
-  const lackingLearners=[...new Map(rows.flatMap(r=>r.lacking.map(st=>[st.id,st])).filter(Boolean)).values()];
-  const missingEntries=rows.reduce((n,r)=>n+r.missing.length,0);
-  const encoded=rows.reduce((n,r)=>n+r.vals.length,0), expected=rows.reduce((n,r)=>n+r.eligible.length,0);
-  const bands=[{label:"90+",value:allVals.filter(v=>v>=90).length},{label:"85–89",value:allVals.filter(v=>v>=85&&v<90).length},{label:"80–84",value:allVals.filter(v=>v>=80&&v<85).length},{label:"75–79",value:allVals.filter(v=>v>=75&&v<80).length},{label:"<75",value:allVals.filter(v=>v<75).length}];
+
+  const values=students.map(gradeValue).filter(v=>v!=null).map(Number);
+  const mean=values.length?Math.round(values.reduce((a,b)=>a+b,0)/values.length*100)/100:null;
+  const passing=values.filter(v=>v>=75).length;
+  const missing=students.filter(st=>gradeValue(st)==null);
+  const bands=[
+    {label:"Advanced (90–100)",value:values.filter(v=>v>=90).length},
+    {label:"Proficient (85–89)",value:values.filter(v=>v>=85&&v<90).length},
+    {label:"Approaching (80–84)",value:values.filter(v=>v>=80&&v<85).length},
+    {label:"Developing (75–79)",value:values.filter(v=>v>=75&&v<80).length},
+    {label:"Beginning (<75)",value:values.filter(v=>v<75).length}
+  ];
+  const sd=values.length>1?Math.sqrt(values.reduce((sum,v)=>sum+Math.pow(v-mean,2),0)/(values.length-1)):null;
+  const cv=sd!=null&&mean?Math.round(sd/mean*10000)/100:null;
   const scopeLabel=isCH?`Curriculum Head · Grade ${profile.assigned_grade_level}`:isAdviser?`Adviser · ${mySection.name}`:"Subject Teacher · My Assignments";
 
-  if(loading) return <Card><div style={{textAlign:"center",padding:24}}>⏳ Preparing your analytics…</div></Card>;
   return <div>
     <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>📊 My Teaching Analytics</div>
-    <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>{scopeLabel}. Monitor progress, missing entries, learning gaps, and class/subject performance.</div>
-    <Card style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div><strong style={{color:T.green2}}>Reporting Period</strong><div style={{fontSize:10,color:T.textMuted}}>Use Final for the average of recorded Terms 1–3.</div></div><select value={term} onChange={e=>setTerm(e.target.value==="final"?"final":parseInt(e.target.value))} style={{width:170}}><option value={1}>Term 1</option><option value={2}>Term 2</option><option value={3}>Term 3</option><option value="final">Final / Year-End</option></select></div></Card>
-    <div className="teacher-monitor-grid" style={{marginBottom:12}}>
-      {[['👥',students.length,'Learners'],['📝',`${encoded}/${expected}`,"Grades encoded"],['📊',overall??'—','Overall average'],['⚠️',lackingLearners.length,'Learners with <75']].map((x,i)=><Card key={i} style={{padding:12,textAlign:"center"}}><div style={{fontSize:18}}>{x[0]}</div><strong style={{fontSize:18,color:i===3&&x[1]>0?T.red:T.green2}}>{x[1]}</strong><div style={{fontSize:10,color:T.textMuted}}>{x[2]}</div></Card>)}
-    </div>
-    <div className="teacher-analytics-columns" style={{marginBottom:12}}>
-      <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:6}}>📈 Grade Distribution</div><MiniBarChart data={bands} label="Recorded grades by performance band"/></Card>
-      <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:6}}>🎯 Monitoring Alerts</div>
-        {[['Missing grade entries',missingEntries,missingEntries?T.red:T.green3],['Learners below 75',lackingLearners.length,lackingLearners.length?T.red:T.green3],['Subjects monitored',rows.length,T.blue],['Encoding completion',expected?Math.round(encoded/expected*100):0,T.green3]].map((x,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #edf2ed"}}><span style={{fontSize:11,color:T.textMuted}}>{x[0]}</span><strong style={{color:x[2]}}>{x[3]===T.green3&&x[0]==="Encoding completion"?`${x[1]}%`:x[1]}</strong></div>)}
-      </Card>
-    </div>
-    <Card style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>📚 Subject / Assignment Performance</div>
-      {rows.length===0?<div style={{textAlign:"center",color:T.gray,padding:14}}>No applicable grade records yet.</div>:rows.sort((a,b)=>(b.mean??-1)-(a.mean??-1)).map(r=><div key={r.sub.id} style={{padding:"8px 0",borderBottom:"1px solid #edf2ed"}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><div><strong style={{fontSize:12}}>{r.sub.name}</strong>{r.sub.tve_qualification&&<div style={{fontSize:9,color:T.textMuted}}>{r.sub.tve_qualification}</div>}</div><strong style={{color:r.mean!=null?(r.mean>=75?T.green3:T.red):T.gray}}>{r.mean??"—"}</strong></div><div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",marginTop:5}}><div style={{height:7,borderRadius:5,background:"#E3EEDD",overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,r.mean||0)}%`,background:r.mean>=75?T.green3:T.red}}/></div><span style={{fontSize:9,color:T.textMuted}}>{r.pass}% pass</span><span style={{fontSize:9,color:r.lacking.length?T.red:T.green3}}>{r.lacking.length} lacking · {r.missing.length} missing</span></div></div>)}
+    <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>{scopeLabel}. Select a subject and section below to view its complete analytics.</div>
+
+    <Card style={{marginBottom:12}}>
+      <div className="teacher-review-controls">
+        <div><label style={{fontSize:11,color:T.textMuted}}>Subject</label><select value={selSubject} onChange={e=>{setSelSubject(e.target.value);setSelSection("")}}>
+          <option value="">-- Select Subject --</option>{teacherSubjects.map(sub=><option key={sub.id} value={sub.id}>{sub.name} · Gr.{sub.grade_level}</option>)}
+        </select></div>
+        <div><label style={{fontSize:11,color:T.textMuted}}>Section</label><select value={selSection} onChange={e=>setSelSection(e.target.value)} disabled={!selectedSubject}>
+          <option value="">-- Select Section --</option>{sectionOptions.map(sec=><option key={sec.id} value={sec.id}>{sec.name}</option>)}
+        </select></div>
+        <div><label style={{fontSize:11,color:T.textMuted}}>Term</label><select value={term} onChange={e=>setTerm(e.target.value==="final"?"final":parseInt(e.target.value))}>
+          <option value={1}>Term 1</option><option value={2}>Term 2</option><option value={3}>Term 3</option><option value="final">Final / Year-End</option>
+        </select></div>
+      </div>
+      {teacherSubjects.length===0&&<div style={{fontSize:11,color:T.red,marginTop:8}}>No subject assignments were found for this account. Check the teacher's subject assignments in the admin panel.</div>}
     </Card>
-    {lackingLearners.length>0&&<Card style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:T.red,marginBottom:8}}>⚠️ Learners Needing Attention</div>{sortStudentsMaleFirst(lackingLearners).map(st=><div key={st.id} style={{padding:"6px 0",borderBottom:"1px solid #f4dddd",fontSize:11}}><strong>{studentDisplay(st)}</strong><span style={{color:T.textMuted}}> · {rows.filter(r=>r.lacking.some(x=>x.id===st.id)).map(r=>r.sub.name).join(", ")}</span></div>)}</Card>}
-    <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>💡 Recommended Monitoring Actions</div><ul style={{margin:"0 0 0 18px",padding:0,fontSize:11,color:T.textMuted,lineHeight:1.7}}>
-      <li>Review all <strong>missing grade entries</strong> before term submission.</li><li>Check learners below <strong>75</strong> and identify the specific subjects needing intervention.</li><li>Compare subject averages to identify areas that need reteaching or enrichment.</li><li>Use the <strong>Review My Encoded Grades</strong> tab to verify entries before reports are finalized.</li>{isAdviser&&<li>Cross-check academic gaps with <strong>attendance patterns</strong> during learner conferences.</li>}{isCH&&<li>Compare sections and subjects within the grade level to identify school-wide curriculum priorities.</li>}
-    </ul></Card>
+
+    {!selectedSubject||!selSection ? <Card><div style={{textAlign:"center",color:T.gray,padding:20}}>Select a subject and section to view analytics.</div></Card> : loading ? <Card><div style={{textAlign:"center",padding:24}}>⏳ Loading {selectedSubject.name} analytics…</div></Card> : <>
+      <Card style={{marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+          <div><strong style={{fontSize:14,color:T.green2}}>{selectedSubject.name}</strong><div style={{fontSize:10,color:T.textMuted}}>{sections.find(s=>s.id===selSection)?.name} · {term==="final"?"Final / Year-End":`Term ${term}`}</div></div>
+          <Badge text={`${passing}/${values.length} passing`} color={passing===values.length?T.green3:T.yellow}/>
+        </div>
+        <div className="teacher-monitor-grid">
+          {[['👥',students.length,'Learners'],['📝',values.length,'Encoded'],['📊',mean??'—','GSA / Average'],['⚠️',missing.length,'Missing']].map((x,i)=><Card key={i} style={{padding:12,textAlign:"center"}}><div style={{fontSize:18}}>{x[0]}</div><strong style={{fontSize:18,color:i===3&&x[1]>0?T.red:T.green2}}>{x[1]}</strong><div style={{fontSize:10,color:T.textMuted}}>{x[2]}</div></Card>)}
+        </div>
+      </Card>
+
+      <div className="teacher-analytics-columns" style={{marginBottom:12}}>
+        <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>📈 Proficiency Distribution</div>{bands.map(b=><div key={b.label} style={{display:"grid",gridTemplateColumns:"130px 1fr auto",gap:8,alignItems:"center",marginBottom:8}}><span style={{fontSize:10}}>{b.label}</span><div style={{height:8,borderRadius:6,background:"#E3EEDD",overflow:"hidden"}}><div style={{height:"100%",width:`${values.length?Math.round(b.value/values.length*100):0}%`,background:T.green3}}/></div><strong style={{fontSize:10}}>{b.value}</strong></div>)}</Card>
+        <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>📐 Statistical Indicators</div>{[['Mean / GSA',mean??'—'],['Passing rate',values.length?`${Math.round(passing/values.length*100)}%`:'—'],['Standard deviation',sd!=null?Math.round(sd*100)/100:'—'],['Coefficient of variation',cv!=null?`${cv}%`:'—']].map((x,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #edf2ed"}}><span style={{fontSize:11,color:T.textMuted}}>{x[0]}</span><strong>{x[1]}</strong></div>)}</Card>
+      </div>
+
+      <Card style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>👥 Learners by Performance</div>{students.length===0?<div style={{color:T.gray,padding:12,textAlign:"center"}}>No learners found for this section.</div>:students.map(st=>{const v=gradeValue(st);return <div key={st.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 8px",borderBottom:"1px solid #edf2ed",fontSize:11}}><span>{studentDisplay(st)}</span><strong style={{color:v==null?T.gray:Number(v)<75?T.red:T.green3}}>{v==null?"—":Math.round(Number(v)*100)/100}</strong></div>})}</Card>
+
+      <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>💡 Interpretation</div><div style={{fontSize:11,color:T.textMuted,lineHeight:1.7}}>{mean==null?"No encoded grades are available for this selection yet.":`The selected subject has a GSA of ${mean}. ${passing} of ${values.length} recorded grades are at or above 75. ${missing.length?`${missing.length} learner${missing.length===1?' is':'s are'} still missing a grade.`:"All learners in the selected scope have a recorded grade."}`}</div></Card>
+    </>}
   </div>;
 };
-
 
 // ─── TEACHER DAILY COMPANION ─────────────────────────────────────────────
 // A lightweight floating coach for teachers. It surfaces concrete unfinished
