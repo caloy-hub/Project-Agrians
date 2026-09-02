@@ -1,20 +1,30 @@
 # Student Name Display Rule
 
-AGRIANS stores the learner's encoded name exactly as entered so official DepEd forms can preserve the required order.
+AGRIANS keeps the learner name in the same surname-first order used during encoding and in teacher records. The stored/database value is not rewritten.
 
-## Automatic display rule
+## Application display rule
 
-If a learner name is encoded in comma-separated surname-first form:
+If a learner name is encoded in comma-separated surname-first form, the application displays that same order everywhere:
 
-- `DELA CRUZ, JUAN, D.` → `JUAN D. DELA CRUZ`
-- `SANTOS, MARIA, L.` → `MARIA L. SANTOS`
-- `DELA CRUZ, JUAN D.` → `JUAN D. DELA CRUZ`
+- `DELA CRUZ, JUAN, D.` → `DELA CRUZ, JUAN, D.`
+- `SANTOS, MARIA, L.` → `SANTOS, MARIA, L.`
+- `DELA CRUZ, JUAN D.` → `DELA CRUZ, JUAN D.`
 
-Names without a comma, or ambiguous multi-part comma names, are left unchanged rather than guessed.
+This keeps the roster sequence familiar to teachers while encoding, reviewing, monitoring, and viewing learner records. Names without a comma are displayed as entered.
 
-## Official form exceptions
+## Teacher encoding order
+
+Grade encoding and subject-grade review continue to group learners as:
+
+1. Male
+2. Female
+3. Unspecified/other
+
+Within each group, learners are alphabetized using the encoded surname-first display name.
+
+## Official forms
 
 - **SF2** keeps the stored/encoded name order.
 - **SF9** keeps the stored/encoded name order.
 
-The application database is not rewritten by this feature. Only the presentation layer (and non-SF2/SF9 learner-facing output where explicitly applied) is formatted.
+The application database is not rewritten by this presentation rule.

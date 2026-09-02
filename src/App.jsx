@@ -234,28 +234,23 @@ const avg = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) 
 
 
 // ── STUDENT NAME DISPLAY ─────────────────────────────────────────────────
-// Student names are stored exactly as encoded (e.g. "DELA CRUZ, JUAN, D.")
-// so official forms such as SF2 and SF9 can preserve the encoded/DepEd order.
-// Everywhere else in the app, this helper automatically recognizes the
-// comma-separated surname-first convention and displays First Name M.I. Surname.
-// Names that are already in ordinary order, or do not contain enough comma
-// segments to be safely interpreted, are returned unchanged.
-const displayStudentName = raw => {
-  const value=String(raw||'').trim().replace(/\s+/g,' ');
-  if (!value || !value.includes(',')) return value;
-  const parts=value.split(',').map(x=>x.trim()).filter(Boolean);
-  if (parts.length<2 || parts.length>3) return value;
-  const surname=parts[0];
-  const first=parts[1];
-  const middle=parts[2]||'';
-  // Only auto-reorder when the last segment looks like a middle initial.
-  // This avoids guessing on unusual names with multiple comma-separated parts.
-  if (parts.length===3 && middle && !/^[A-Za-z](?:\.)?$/.test(middle)) return value;
-  return [first,middle,surname].filter(Boolean).join(' ');
-};
-
+// Keep the learner's encoded/DepEd-style order throughout the application,
+// e.g. "DELA CRUZ, JUAN, D.". Teachers are accustomed to this sequence and
+// the same order should appear while encoding, reviewing, monitoring, and in
+// learner records. SF2/SF9 also retain this exact stored order.
+const displayStudentName = raw => String(raw||'').trim().replace(/\s+/g,' ');
 const studentDisplay = student => displayStudentName(student?.name);
 const studentNameText = value => displayStudentName(value);
+
+// Consistent learner ordering for grade encoding/review: Male first, then Female,
+// then any unspecified/other value. Within each group, learners are alphabetized
+// by their encoded surname-first display name so the roster matches teacher records.
+const sortStudentsMaleFirst = list => [...(list||[])].sort((a,b)=>{
+  const rank=v => v === "Male" ? 0 : v === "Female" ? 1 : 2;
+  const genderDiff=rank(a?.gender)-rank(b?.gender);
+  if (genderDiff!==0) return genderDiff;
+  return studentDisplay(a).localeCompare(studentDisplay(b),undefined,{sensitivity:"base"});
+});
 
 // ── MAPEH components ────────────────────────────────────────────────────
 // MAPEH is not graded directly. It has two components — "PE and Health"
@@ -2242,6 +2237,204 @@ const StudentDashboard = ({ profile, onLogout }) => {
   );
 };
 
+// ─── SUBJECT GRADE REVIEW ───────────────────────────────────────────────
+// Read-only review workspace available to every subject teacher. It uses the
+// same subject_assignments scope as grade encoding, so teachers only review
+// learners/classes assigned to them.
+const SubjectGradeReview = ({profile, subjects, subjectAssignments, sections}) => {
+  const availableSubjects=subjects.filter(s=>!isMapehParent(s,subjects));
+  const [selSubject,setSelSubject]=useState(availableSubjects[0]?.id||"");
+  const [selSection,setSelSection]=useState("");
+  const [selTerm,setSelTerm]=useState(1);
+  const [students,setStudents]=useState([]);
+  const [grades,setGrades]=useState([]);
+  const [loading,setLoading]=useState(false);
+
+  const selectedSubject=availableSubjects.find(s=>s.id===selSubject);
+  const assignments=subjectAssignments.filter(a=>a.subject_id===selSubject);
+  const scopedIds=assignments.map(a=>a.section_id).filter(Boolean);
+  const gradeWide=assignments.some(a=>!a.section_id);
+  const sectionOptions=gradeWide
+    ?sections.filter(sec=>sec.grade_level===selectedSubject?.grade_level)
+    :sections.filter(sec=>scopedIds.includes(sec.id));
+
+  useEffect(()=>{
+    if (!selSubject && availableSubjects[0]?.id) setSelSubject(availableSubjects[0].id);
+  },[availableSubjects.length]);
+
+  useEffect(()=>{
+    if (!selSubject) return;
+    const firstScoped=scopedIds[0]||"";
+    const valid=sectionOptions.some(sec=>sec.id===selSection);
+    if (!valid) setSelSection(firstScoped||sectionOptions[0]?.id||"");
+  },[selSubject,subjectAssignments.length,sections.length]);
+
+  useEffect(()=>{
+    if (!selectedSubject || !selSection) { setStudents([]); setGrades([]); return; }
+    (async()=>{
+      setLoading(true);
+      let q=supabase.from("profiles").select("*")
+        .eq("role","student").eq("grade_level",selectedSubject.grade_level).eq("section_id",selSection);
+      if (selectedSubject.tve_qualification) q=q.eq("tve_qualification",selectedSubject.tve_qualification);
+      const [stuR,gR]=await Promise.all([
+        q.order("name"),
+        supabase.from("grades").select("*").eq("subject_id",selSubject).eq("term",selTerm)
+      ]);
+      if (stuR.data) setStudents(sortStudentsMaleFirst(stuR.data));
+      if (gR.data) setGrades(gR.data);
+      setLoading(false);
+    })();
+  },[selSubject,selSection,selTerm,selectedSubject?.grade_level,selectedSubject?.tve_qualification]);
+
+  const values=students.map(st=>grades.find(g=>g.student_id===st.id)?.grade).filter(v=>v!=null);
+  const mean=values.length?Math.round(values.reduce((a,b)=>a+Number(b),0)/values.length*100)/100:null;
+  const passed=values.filter(v=>Number(v)>=75).length;
+  const missing=students.filter(st=>!grades.some(g=>g.student_id===st.id));
+
+  return <div>
+    <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:4}}>🔎 Review My Encoded Grades</div>
+    <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>Review your encoded grades by subject, section, and term. This is read-only and does not change official records.</div>
+    <Card style={{marginBottom:12}}>
+      <div className="teacher-review-controls">
+        <div><label style={{fontSize:11,color:T.textMuted}}>Subject</label><select value={selSubject} onChange={e=>setSelSubject(e.target.value)}>
+          <option value="">-- Select Subject --</option>{availableSubjects.map(sub=><option key={sub.id} value={sub.id}>{sub.name} · Gr.{sub.grade_level}</option>)}
+        </select></div>
+        <div><label style={{fontSize:11,color:T.textMuted}}>Section</label><select value={selSection} onChange={e=>setSelSection(e.target.value)} disabled={!selectedSubject}>
+          <option value="">-- Select Section --</option>{sectionOptions.map(sec=><option key={sec.id} value={sec.id}>{sec.name}</option>)}
+        </select></div>
+        <div><label style={{fontSize:11,color:T.textMuted}}>Term</label><select value={selTerm} onChange={e=>setSelTerm(parseInt(e.target.value))}>
+          <option value={1}>Term 1</option><option value={2}>Term 2</option><option value={3}>Term 3</option>
+        </select></div>
+      </div>
+    </Card>
+    {!selectedSubject||!selSection ? <Card><div style={{textAlign:"center",color:T.gray,padding:20}}>Select a subject and section to review encoded grades.</div></Card> : loading ? <Card><div style={{textAlign:"center",padding:20}}>⏳ Loading grades…</div></Card> : <>
+      <div className="teacher-monitor-grid" style={{marginBottom:12}}>
+        {[['👥',students.length,'Learners'],['📝',grades.filter(g=>students.some(s=>s.id===g.student_id)).length,'Encoded'],['📊',mean??'—','Average'],['⚠️',missing.length,'Missing']].map((x,i)=><Card key={i} style={{padding:12,textAlign:"center"}}><div style={{fontSize:18}}>{x[0]}</div><strong style={{fontSize:18,color:i===3&&x[1]>0?T.red:T.green2}}>{x[1]}</strong><div style={{fontSize:10,color:T.textMuted}}>{x[2]}</div></Card>)}
+      </div>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.green2}}>{selectedSubject.name} · {sections.find(s=>s.id===selSection)?.name} · Term {selTerm}</div>
+          <Badge text={`${passed}/${values.length} passing`} color={passed===values.length?T.green3:T.yellow}/>
+        </div>
+        {students.filter(s=>s.gender==="Male").length>0&&<div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:800,color:T.blue,background:"#e3f2fd",padding:"5px 9px",borderRadius:6,marginBottom:4}}>♂ MALE ({students.filter(s=>s.gender==="Male").length})</div>
+          {students.filter(s=>s.gender==="Male").map(st=><div key={st.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 8px",borderBottom:"1px solid #edf2ed"}}><span>{studentDisplay(st)}</span><strong style={{color:(grades.find(g=>g.student_id===st.id)?.grade??0)>=75?T.green3:T.red}}>{grades.find(g=>g.student_id===st.id)?.grade??"—"}</strong></div>)}
+        </div>}
+        {students.filter(s=>s.gender==="Female").length>0&&<div>
+          <div style={{fontSize:11,fontWeight:800,color:"#c2185b",background:"#fce4ec",padding:"5px 9px",borderRadius:6,marginBottom:4}}>♀ FEMALE ({students.filter(s=>s.gender==="Female").length})</div>
+          {students.filter(s=>s.gender==="Female").map(st=><div key={st.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 8px",borderBottom:"1px solid #edf2ed"}}><span>{studentDisplay(st)}</span><strong style={{color:(grades.find(g=>g.student_id===st.id)?.grade??0)>=75?T.green3:T.red}}>{grades.find(g=>g.student_id===st.id)?.grade??"—"}</strong></div>)}
+        </div>}
+      </Card>
+    </>}
+  </div>;
+};
+
+// ─── TEACHER / ADVISER / CURRICULUM HEAD ANALYTICS ─────────────────────
+const TeacherAnalytics = ({profile, subjects, subjectAssignments, sections, mySection, classStudents}) => {
+  const [term,setTerm]=useState(1);
+  const [students,setStudents]=useState([]);
+  const [subjectsScope,setSubjectsScope]=useState([]);
+  const [grades,setGrades]=useState([]);
+  const [loading,setLoading]=useState(true);
+
+  const isCH=!!profile.is_curriculum_head;
+  const isAdviser=!!mySection;
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      let scopedStudents=[]; let scopedSubjects=[];
+      if (isCH) {
+        const [stuR,subR]=await Promise.all([
+          supabase.from("profiles").select("*").eq("role","student").eq("grade_level",profile.assigned_grade_level),
+          supabase.from("subjects").select("*").eq("grade_level",profile.assigned_grade_level)
+        ]);
+        scopedStudents=sortStudentsMaleFirst(stuR.data||[]); scopedSubjects=subR.data||[];
+      } else if (isAdviser) {
+        scopedStudents=classStudents||[];
+        const {data}=await supabase.from("subjects").select("*").eq("grade_level",mySection.grade_level);
+        scopedSubjects=data||[];
+      } else {
+        const usableAssignments=subjectAssignments.length?subjectAssignments:subjects.map(s=>({subject_id:s.id,teacher_id:profile.id,section_id:s.section_id||null}));
+        const subIds=[...new Set(usableAssignments.map(a=>a.subject_id))];
+        scopedSubjects=subjects.filter(s=>subIds.includes(s.id));
+        const sectionIds=[...new Set(usableAssignments.map(a=>a.section_id).filter(Boolean))];
+        const gradeLevels=[...new Set(scopedSubjects.map(s=>s.grade_level).filter(Boolean))];
+        let q=supabase.from("profiles").select("*").eq("role","student");
+        if (sectionIds.length) {
+          const {data}=await q.in("section_id",sectionIds); scopedStudents=data||[];
+        } else if (gradeLevels.length) {
+          const {data}=await q.in("grade_level",gradeLevels); scopedStudents=data||[];
+        }
+        scopedStudents=sortStudentsMaleFirst(scopedStudents);
+      }
+      const ids=scopedStudents.map(s=>s.id), subIds=scopedSubjects.map(s=>s.id);
+      let g=[];
+      if(ids.length&&subIds.length){ const {data}=await supabase.from("grades").select("*").in("student_id",ids).in("subject_id",subIds); g=data||[]; }
+      setStudents(scopedStudents); setSubjectsScope(scopedSubjects); setGrades(g); setLoading(false);
+    })();
+  },[profile.id,profile.is_curriculum_head,profile.assigned_grade_level,mySection?.id,classStudents.length,subjectAssignments.length,subjects.length]);
+
+  const applicableFor=(sub)=>{
+    if (!sub || sub.parent_subject_id) return [];
+    let eligible=students.filter(st=>st.grade_level===sub.grade_level);
+    if (isAdviser) eligible=eligible.filter(st=>st.section_id===mySection.id);
+    const ass=subjectAssignments.filter(a=>a.subject_id===sub.id);
+    if (!isCH && !isAdviser) {
+      const sectionIds=ass.map(a=>a.section_id).filter(Boolean);
+      const gradeWide=ass.some(a=>!a.section_id);
+      if(sectionIds.length&&!gradeWide) eligible=eligible.filter(st=>sectionIds.includes(st.section_id));
+    } else if (isAdviser) {
+      if(sub.section_id && sub.section_id!==mySection.id) return [];
+    }
+    if(sub.tve_qualification) eligible=eligible.filter(st=>st.tve_qualification===sub.tve_qualification);
+    return eligible;
+  };
+  const gradeValue=(st,sub)=>{
+    if(term==="final"){
+      const vals=[1,2,3].map(t=>grades.find(g=>g.student_id===st.id&&g.subject_id===sub.id&&g.term===t)?.grade).filter(v=>v!=null).map(Number);
+      return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+    }
+    return grades.find(g=>g.student_id===st.id&&g.subject_id===sub.id&&g.term===term)?.grade??null;
+  };
+  const rows=subjectsScope.filter(s=>!isMapehParent(s,subjectsScope)&&s.grade_level).map(sub=>{
+    const eligible=applicableFor(sub); const vals=eligible.map(st=>gradeValue(st,sub)).filter(v=>v!=null).map(Number);
+    const lacking=eligible.filter(st=>{const v=gradeValue(st,sub);return v!=null&&Number(v)<75;});
+    const missing=eligible.filter(st=>gradeValue(st,sub)==null);
+    const mean=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*100)/100:null;
+    return {sub,eligible,vals,mean,pass:vals.length?Math.round(vals.filter(v=>v>=75).length/vals.length*100):0,lacking,missing};
+  }).filter(r=>r.eligible.length);
+  const allVals=rows.flatMap(r=>r.vals), overall=allVals.length?Math.round(allVals.reduce((a,b)=>a+b,0)/allVals.length*100)/100:null;
+  const lackingLearners=[...new Map(rows.flatMap(r=>r.lacking.map(st=>[st.id,st])).filter(Boolean)).values()];
+  const missingEntries=rows.reduce((n,r)=>n+r.missing.length,0);
+  const encoded=rows.reduce((n,r)=>n+r.vals.length,0), expected=rows.reduce((n,r)=>n+r.eligible.length,0);
+  const bands=[{label:"90+",value:allVals.filter(v=>v>=90).length},{label:"85–89",value:allVals.filter(v=>v>=85&&v<90).length},{label:"80–84",value:allVals.filter(v=>v>=80&&v<85).length},{label:"75–79",value:allVals.filter(v=>v>=75&&v<80).length},{label:"<75",value:allVals.filter(v=>v<75).length}];
+  const scopeLabel=isCH?`Curriculum Head · Grade ${profile.assigned_grade_level}`:isAdviser?`Adviser · ${mySection.name}`:"Subject Teacher · My Assignments";
+
+  if(loading) return <Card><div style={{textAlign:"center",padding:24}}>⏳ Preparing your analytics…</div></Card>;
+  return <div>
+    <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>📊 My Teaching Analytics</div>
+    <div style={{fontSize:12,color:T.textMuted,marginBottom:12}}>{scopeLabel}. Monitor progress, missing entries, learning gaps, and class/subject performance.</div>
+    <Card style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}><div><strong style={{color:T.green2}}>Reporting Period</strong><div style={{fontSize:10,color:T.textMuted}}>Use Final for the average of recorded Terms 1–3.</div></div><select value={term} onChange={e=>setTerm(e.target.value==="final"?"final":parseInt(e.target.value))} style={{width:170}}><option value={1}>Term 1</option><option value={2}>Term 2</option><option value={3}>Term 3</option><option value="final">Final / Year-End</option></select></div></Card>
+    <div className="teacher-monitor-grid" style={{marginBottom:12}}>
+      {[['👥',students.length,'Learners'],['📝',`${encoded}/${expected}`,"Grades encoded"],['📊',overall??'—','Overall average'],['⚠️',lackingLearners.length,'Learners with <75']].map((x,i)=><Card key={i} style={{padding:12,textAlign:"center"}}><div style={{fontSize:18}}>{x[0]}</div><strong style={{fontSize:18,color:i===3&&x[1]>0?T.red:T.green2}}>{x[1]}</strong><div style={{fontSize:10,color:T.textMuted}}>{x[2]}</div></Card>)}
+    </div>
+    <div className="teacher-analytics-columns" style={{marginBottom:12}}>
+      <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:6}}>📈 Grade Distribution</div><MiniBarChart data={bands} label="Recorded grades by performance band"/></Card>
+      <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:6}}>🎯 Monitoring Alerts</div>
+        {[['Missing grade entries',missingEntries,missingEntries?T.red:T.green3],['Learners below 75',lackingLearners.length,lackingLearners.length?T.red:T.green3],['Subjects monitored',rows.length,T.blue],['Encoding completion',expected?Math.round(encoded/expected*100):0,T.green3]].map((x,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #edf2ed"}}><span style={{fontSize:11,color:T.textMuted}}>{x[0]}</span><strong style={{color:x[2]}}>{x[3]===T.green3&&x[0]==="Encoding completion"?`${x[1]}%`:x[1]}</strong></div>)}
+      </Card>
+    </div>
+    <Card style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>📚 Subject / Assignment Performance</div>
+      {rows.length===0?<div style={{textAlign:"center",color:T.gray,padding:14}}>No applicable grade records yet.</div>:rows.sort((a,b)=>(b.mean??-1)-(a.mean??-1)).map(r=><div key={r.sub.id} style={{padding:"8px 0",borderBottom:"1px solid #edf2ed"}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><div><strong style={{fontSize:12}}>{r.sub.name}</strong>{r.sub.tve_qualification&&<div style={{fontSize:9,color:T.textMuted}}>{r.sub.tve_qualification}</div>}</div><strong style={{color:r.mean!=null?(r.mean>=75?T.green3:T.red):T.gray}}>{r.mean??"—"}</strong></div><div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",marginTop:5}}><div style={{height:7,borderRadius:5,background:"#E3EEDD",overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,r.mean||0)}%`,background:r.mean>=75?T.green3:T.red}}/></div><span style={{fontSize:9,color:T.textMuted}}>{r.pass}% pass</span><span style={{fontSize:9,color:r.lacking.length?T.red:T.green3}}>{r.lacking.length} lacking · {r.missing.length} missing</span></div></div>)}
+    </Card>
+    {lackingLearners.length>0&&<Card style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:T.red,marginBottom:8}}>⚠️ Learners Needing Attention</div>{sortStudentsMaleFirst(lackingLearners).map(st=><div key={st.id} style={{padding:"6px 0",borderBottom:"1px solid #f4dddd",fontSize:11}}><strong>{studentDisplay(st)}</strong><span style={{color:T.textMuted}}> · {rows.filter(r=>r.lacking.some(x=>x.id===st.id)).map(r=>r.sub.name).join(", ")}</span></div>)}</Card>}
+    <Card><div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:8}}>💡 Recommended Monitoring Actions</div><ul style={{margin:"0 0 0 18px",padding:0,fontSize:11,color:T.textMuted,lineHeight:1.7}}>
+      <li>Review all <strong>missing grade entries</strong> before term submission.</li><li>Check learners below <strong>75</strong> and identify the specific subjects needing intervention.</li><li>Compare subject averages to identify areas that need reteaching or enrichment.</li><li>Use the <strong>Review My Encoded Grades</strong> tab to verify entries before reports are finalized.</li>{isAdviser&&<li>Cross-check academic gaps with <strong>attendance patterns</strong> during learner conferences.</li>}{isCH&&<li>Compare sections and subjects within the grade level to identify school-wide curriculum priorities.</li>}
+    </ul></Card>
+  </div>;
+};
+
 // ─── TEACHER DASHBOARD ───────────────────────────────────
 const TeacherDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("encode");
@@ -2307,7 +2500,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       setMySection(secR.data);
       const {data:stuData}=await supabase.from("profiles").select("*")
         .eq("role","student").eq("section_id",secR.data.id).order("gender").order("name");
-      if (stuData) setClassStudents(stuData);
+      if (stuData) setClassStudents(sortStudentsMaleFirst(stuData));
     }
     const {data:allSec}=await supabase.from("sections").select("*");
     if (allSec) setSections(allSec);
@@ -2324,7 +2517,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const {data}=await supabase.from("profiles").select("*")
       .eq("role","student").eq("grade_level",profile.assigned_grade_level)
       .order("section_id").order("gender").order("name");
-    if (data) setChStudents(data);
+    if (data) setChStudents(sortStudentsMaleFirst(data));
   },[profile.is_curriculum_head,profile.assigned_grade_level]);
 
   useEffect(()=>{fetchChStudents();},[fetchChStudents]);
@@ -2425,7 +2618,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         stuQuery.order("name"),
         supabase.from("grades").select("*").eq("subject_id",selSubject).eq("term",selTerm),
       ]);
-      if (stuR.data) setStudents(stuR.data);
+      if (stuR.data) setStudents(sortStudentsMaleFirst(stuR.data));
       if (gR.data) setDbGrades(gR.data);
     })();
   },[selSubject,selSection,selTerm,subjects]);
@@ -2692,7 +2885,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     }
   };
 
-  const tabs=[["✏️","Encode","encode"],["📅","Appts","appointments"]];
+  const tabs=[["✏️","Encode","encode"],["🔎","Review","review"],["📊","Analytics","analytics"],["📅","Appts","appointments"]];
   if (mySection) tabs.splice(1,0,["🏫","My Class","myclass"],["📆","Attendance","attendance"],
     ["🏆","Honors","honors"],["📄","Forms","reports"]);
   if (profile.is_curriculum_head) tabs.push(["🎓","Students","chstudents"]);
@@ -2708,9 +2901,9 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       <Toast msg={toast}/>
       <div className="teacher-welcome-wrap">
         <WelcomePanel profile={profile} role="teacher" stats={[
-          {icon:"👥",value:mySection?classStudents.length:"—",label:"Learners"},
+          {icon:"👥",value:mySection?classStudents.length:(profile.is_curriculum_head?`Gr.${profile.assigned_grade_level}`:"—"),label:mySection?"Advisory learners":profile.is_curriculum_head?"Curriculum grade":"Teaching scope"},
           {icon:"📚",value:subjects.length,label:"Assigned subjects"},
-          {icon:"📅",value:appointments.filter(a=>a.status==="Pending").length,label:"Pending appointments"}
+          {icon:"📊",value:profile.is_curriculum_head?"Grade-wide":mySection?"Section-wide":"Subject review",label:"Analytics scope"}
         ]}/>
       </div>
       {editStudent&&(
@@ -2809,19 +3002,31 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                       No students found{subjects.find(s=>s.id===selSubject)?.tve_qualification
                         ?" for this TVE qualification in this section.":" in this section."}
                     </div>
-                  :students.map(s=>(
-                    <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,
-                      padding:"8px 0",borderBottom:"1px solid #E3EEDD"}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:600,color:T.text}}>{studentDisplay(s)}</div>
-                        <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn}</div>
+                  :[
+                    ["Male","♂","#1976d2","#e3f2fd"],
+                    ["Female","♀","#c2185b","#fce4ec"]
+                  ].map(([gender,icon,color,bg])=>{
+                    const group=students.filter(s=>s.gender===gender);
+                    if(!group.length) return null;
+                    return <div key={gender} style={{marginBottom:10}}>
+                      <div style={{fontSize:11,fontWeight:800,color,background:bg,padding:"5px 9px",borderRadius:6,borderLeft:`3px solid ${color}`,marginBottom:4,letterSpacing:.2}}>
+                        {icon} {gender.toUpperCase()} ({group.length})
                       </div>
-                      <input type="number" min="0" max="100" style={{width:72,textAlign:"center"}}
-                        value={getGradeVal(s.id)}
-                        onChange={e=>setLocalGrades(p=>({...p,[`${s.id}-${selSubject}-${selTerm}`]:e.target.value}))}
-                        placeholder="0–100"/>
-                    </div>
-                  ))
+                      {group.map(s=>(
+                        <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,
+                          padding:"8px 8px",borderBottom:"1px solid #E3EEDD"}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{studentDisplay(s)}</div>
+                            <div style={{fontSize:11,color:T.textMuted}}>LRN: {s.lrn}</div>
+                          </div>
+                          <input type="number" min="0" max="100" style={{width:72,textAlign:"center"}}
+                            value={getGradeVal(s.id)}
+                            onChange={e=>setLocalGrades(p=>({...p,[`${s.id}-${selSubject}-${selTerm}`]:e.target.value}))}
+                            placeholder="0–100"/>
+                        </div>
+                      ))}
+                    </div>;
+                  })
                 }
                 <Btn onClick={saveGrades} style={{width:"100%",marginTop:12}}>💾 Save Grades</Btn>
               </Card>
@@ -3104,6 +3309,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
           </div>
         )}
 
+        {tab==="review"&&(
+          <SubjectGradeReview profile={profile} subjects={subjects} subjectAssignments={subjectAssignments} sections={sections}/>
+        )}
+        {tab==="analytics"&&(
+          <TeacherAnalytics profile={profile} subjects={subjects} subjectAssignments={subjectAssignments} sections={sections} mySection={mySection} classStudents={classStudents}/>
+        )}
         {tab==="appointments"&&(
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>📅 Appointments</div>
