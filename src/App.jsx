@@ -1054,16 +1054,27 @@ const EditSectionModal = ({ section, onSave, onClose }) => {
   );
 };
 
-const EditSubjectModal = ({ subject, isMapeh, onSave, onClose }) => {
+const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[] }) => {
   const [form,setForm]=useState({
     name:subject.name||"", grade_level:subject.grade_level,
+    tve_qualification:subject.tve_qualification||"",
   });
   const [saving,setSaving]=useState(false);
+  const isTveGrade=parseInt(form.grade_level)>=8&&parseInt(form.grade_level)<=10;
 
   const submit=async()=>{
     if (!form.name.trim()){alert("Subject name is required.");return;}
     setSaving(true);
-    await onSave({ name:form.name.trim(), grade_level:parseInt(form.grade_level) });
+    await onSave({
+      name:form.name.trim(),
+      grade_level:parseInt(form.grade_level),
+      // A subject only stays scoped to a TVE qualification while both a grade
+      // level of 8–10 AND an explicit qualification are selected. Moving the
+      // subject out of Grades 8–10 (or clearing the dropdown) always clears
+      // the tag — this is the only place in the app that can undo a subject
+      // getting stuck pointing at the wrong qualification's roster.
+      tve_qualification:isTveGrade&&form.tve_qualification?form.tve_qualification:null,
+    });
     setSaving(false);
   };
 
@@ -1085,6 +1096,24 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose }) => {
             onChange={e=>setForm(p=>({...p,grade_level:e.target.value}))}>
             {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
           </select>
+          {isTveGrade&&(
+            <div>
+              <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>
+                TVE QUALIFICATION SCOPE
+              </label>
+              <select value={form.tve_qualification}
+                onChange={e=>setForm(p=>({...p,tve_qualification:e.target.value}))}>
+                <option value="">— None (visible to all students in the section) —</option>
+                {qualifications.map(q=><option key={q} value={q}>{q}</option>)}
+              </select>
+              <div style={{fontSize:10,color:T.textMuted,marginTop:4}}>
+                Only set this for subjects that are specific to one TVE qualification
+                (e.g. "TVE-AgriCrop Production"). Regular subjects like Science or
+                Mathematics should stay set to "None" so every student in the section
+                shows up, regardless of their qualification track.
+              </div>
+            </div>
+          )}
         </div>
         <div style={{display:"flex",gap:8}}>
           <Btn onClick={submit} disabled={saving} style={{flex:1}}>
@@ -4140,11 +4169,17 @@ const AdminDashboard = ({ profile, onLogout }) => {
     if (!editSubject) return;
     const {error}=await supabase.from("subjects").update(updates).eq("id",editSubject.id);
     if (error){notify("❌ "+error.message);return;}
-    // Keep MAPEH components' grade level in sync with their parent.
+    // Keep MAPEH components' grade level and TVE qualification scope in sync
+    // with their parent, so "PE and Health" / "Music and Arts" never drift
+    // onto a different roster than the MAPEH subject they belong to.
     const comps=subjects.filter(s=>s.parent_subject_id===editSubject.id);
-    if (comps.length&&updates.grade_level!==undefined) {
-      await supabase.from("subjects").update({grade_level:updates.grade_level})
-        .in("id",comps.map(c=>c.id));
+    if (comps.length) {
+      const compUpdates={};
+      if (updates.grade_level!==undefined) compUpdates.grade_level=updates.grade_level;
+      if (updates.tve_qualification!==undefined) compUpdates.tve_qualification=updates.tve_qualification;
+      if (Object.keys(compUpdates).length) {
+        await supabase.from("subjects").update(compUpdates).in("id",comps.map(c=>c.id));
+      }
     }
     notify("✅ Subject updated!");
     setEditSubject(null);
@@ -4396,6 +4431,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       {editSubject&&(
         <EditSubjectModal subject={editSubject}
           isMapeh={editSubject.name.trim().toUpperCase()==="MAPEH"}
+          qualifications={qualifications.map(q=>q.name)}
           onSave={updateSubject} onClose={()=>setEditSubject(null)}/>
       )}
       {editGrade&&(
