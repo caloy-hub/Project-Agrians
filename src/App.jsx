@@ -2719,7 +2719,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       supabase.from("subjects").select("*").eq("teacher_id",profile.id),
       supabase.from("subject_assignments").select("id,subject_id,teacher_id,section_id").eq("teacher_id",profile.id),
       supabase.from("appointments").select("*").eq("teacher_id",profile.id),
-      supabase.from("sections").select("*").eq("adviser_id",profile.id).single(),
+      supabase.from("sections").select("*").eq("adviser_id",profile.id).order("name").limit(1),
       supabase.from("tve_qualifications").select("*").order("name"),
       supabase.from("school_holidays").select("*").order("date"),
     ]);
@@ -2741,10 +2741,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     if (aR.data) setAppointments(aR.data);
     if (qR.data) setQualifications(qR.data.map(q=>q.name));
     if (holR.data) setHolidays(holR.data);
-    if (secR.data) {
-      setMySection(secR.data);
+    const adviserSection=Array.isArray(secR.data)?(secR.data[0]||null):secR.data;
+    if (adviserSection) {
+      setMySection(adviserSection);
       const {data:stuData}=await supabase.from("profiles").select("*")
-        .eq("role","student").eq("section_id",secR.data.id).order("gender").order("name");
+        .eq("role","student").eq("section_id",adviserSection.id).order("gender").order("name");
       if (stuData) setClassStudents(sortStudentsMaleFirst(stuData));
     }
     const {data:allSec}=await supabase.from("sections").select("*");
@@ -4095,14 +4096,34 @@ const AdminDashboard = ({ profile, onLogout }) => {
     notify("✅ All assignments removed."); fetchAll();
   };
 
+  const ensureSubjectAssignments=async rows=>{
+    // Do not use PostgREST upsert(onConflict:...) here. The migration uses
+    // partial unique indexes for section-scoped and grade-wide rows, and
+    // PostgREST cannot infer those indexes from (subject_id,teacher_id,section_id).
+    // Check existing rows first, then insert only the missing assignments.
+    if (!rows.length) return null;
+    const subjectIds=[...new Set(rows.map(r=>r.subject_id))];
+    const teacherIds=[...new Set(rows.map(r=>r.teacher_id))];
+    const {data:existing,error:readError}=await supabase.from("subject_assignments")
+      .select("id,subject_id,teacher_id,section_id")
+      .in("subject_id",subjectIds).in("teacher_id",teacherIds);
+    if (readError) return readError;
+    const key=r=>`${r.subject_id}|${r.teacher_id}|${r.section_id||""}`;
+    const existingKeys=new Set((existing||[]).map(key));
+    const missing=rows.filter(r=>!existingKeys.has(key(r)));
+    if (!missing.length) return null;
+    const {error}=await supabase.from("subject_assignments").insert(missing);
+    return error||null;
+  };
+
   const copyGradeAssignments=async(subject,fromSectionId,toSectionIds,teacherId)=>{
     if (!teacherId||!toSectionIds.length) return;
     setAssignmentBusy(true);
     const rows=toSectionIds.map(sectionId=>({subject_id:subject.id,teacher_id:teacherId,section_id:sectionId}));
-    const {error}=await supabase.from("subject_assignments").upsert(rows,{onConflict:"subject_id,teacher_id,section_id"});
+    const error=await ensureSubjectAssignments(rows);
     setAssignmentBusy(false);
     if (error){notify("❌ "+error.message);return;}
-    notify(`✅ Assigned ${teacherId?toSectionIds.length:0} section(s).`); fetchAll();
+    notify(`✅ Assigned ${toSectionIds.length} section(s).`); fetchAll();
   };
 
   const reassignQualification=async(subId,qualName)=>{
@@ -4873,7 +4894,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
                   if (!sub) return;
                   if (allSections) {
                     setAssignmentBusy(true);
-                    const {error}=await supabase.from("subject_assignments").upsert({subject_id:sub.id,teacher_id:teacherId,section_id:null});
+                    const error=await ensureSubjectAssignments([{subject_id:sub.id,teacher_id:teacherId,section_id:null}]);
                     setAssignmentBusy(false);
                     if (error) notify("❌ "+error.message); else { notify("✅ Teacher assigned to all sections in this grade."); fetchAll(); }
                   } else await copyGradeAssignments(sub,null,sectionIds,teacherId);
