@@ -1,5 +1,5 @@
 // ============================================================
-//  App.jsx — FINAL COMPLETE VERSION v6
+//  App.jsx — FINAL COMPLETE VERSION v27
 //  Maria Cristina P. Belcar Agricultural High School
 //  School ID: 304342 | S.Y. 2026–2027
 //  Dept. of Education · Region XI · Division of Davao City
@@ -2435,6 +2435,214 @@ const TeacherAnalytics = ({profile, subjects, subjectAssignments, sections, mySe
   </div>;
 };
 
+
+// ─── TEACHER DAILY COMPANION ─────────────────────────────────────────────
+// A lightweight floating coach for teachers. It surfaces concrete unfinished
+// work for today without changing any official records.
+const TeacherFieldBuddy = ({profile, subjects, subjectAssignments, sections, mySection, classStudents, appointments, onNavigate}) => {
+  const [open,setOpen]=useState(true);
+  const [todayAttendance,setTodayAttendance]=useState([]);
+  const [todayGrades,setTodayGrades]=useState([]);
+  const [scopeStudents,setScopeStudents]=useState([]);
+  const today=new Date();
+  const iso=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const term = iso < '2026-09-16' ? 1 : iso < '2027-01-04' ? 2 : 3;
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      if(mySection?.id && classStudents.length){
+        const {data}=await supabase.from('daily_attendance').select('student_id,date,status')
+          .eq('date',iso).in('student_id',classStudents.map(s=>s.id));
+        if(!cancelled) setTodayAttendance(data||[]);
+      } else if(!cancelled) setTodayAttendance([]);
+      const ids=[...new Set(subjectAssignments.map(a=>a.subject_id).filter(Boolean))];
+      const gradeLevels=[...new Set(subjects.filter(s=>ids.includes(s.id)).map(s=>s.grade_level).filter(Boolean))];
+      if(gradeLevels.length){
+        const {data}=await supabase.from('profiles').select('*').eq('role','student').in('grade_level',gradeLevels);
+        if(!cancelled) setScopeStudents(data||[]);
+      } else if(!cancelled) setScopeStudents([]);
+      if(ids.length){
+        const {data}=await supabase.from('grades').select('student_id,subject_id,term,grade').in('subject_id',ids).eq('term',term);
+        if(!cancelled) setTodayGrades(data||[]);
+      } else if(!cancelled) setTodayGrades([]);
+    })();
+    return ()=>{cancelled=true};
+  },[iso,term,mySection?.id,classStudents.length,subjectAssignments.map(a=>a.subject_id).join(','),subjects.map(s=>s.id).join(',')]);
+
+  const isWeekday=today.getDay()>0&&today.getDay()<6;
+  const missingAttendance=mySection&&isWeekday ? Math.max(0,classStudents.length-todayAttendance.length) : 0;
+  const assignmentRows=subjects.filter(sub=>{
+    if(sub.parent_subject_id) return false;
+    const as=subjectAssignments.filter(a=>a.subject_id===sub.id);
+    return as.length>0;
+  });
+  const missingGrades=assignmentRows.reduce((n,sub)=>{
+    let eligible=(mySection?classStudents:scopeStudents).filter(st=>st.grade_level===sub.grade_level && (!sub.tve_qualification||st.tve_qualification===sub.tve_qualification));
+    const as=subjectAssignments.filter(a=>a.subject_id===sub.id);
+    const secIds=as.map(a=>a.section_id).filter(Boolean);
+    const gradeWide=as.some(a=>!a.section_id);
+    if(mySection && secIds.length && !gradeWide) eligible=eligible.filter(st=>secIds.includes(st.section_id));
+    if(!eligible.length) return n;
+    return n+eligible.filter(st=>!todayGrades.some(g=>g.student_id===st.id&&g.subject_id===sub.id)).length;
+  },0);
+  const todaysAppointments=appointments.filter(a=>a.date===iso&&a.status!=='Declined').length;
+
+  const items=[];
+  if(missingAttendance>0) items.push({icon:'📆',text:`Attendance still needs checking for ${missingAttendance} learner${missingAttendance===1?'':'s'}.`,action:'Open Attendance',tab:'attendance'});
+  if(missingGrades>0) items.push({icon:'📝',text:`${missingGrades} expected grade entr${missingGrades===1?'y':'ies'} are still missing in your current scope.`,action:'Review Grades',tab:'review'});
+  if(todaysAppointments>0) items.push({icon:'🤝',text:`You have ${todaysAppointments} parent/teacher appointment${todaysAppointments===1?'':'s'} today.`,action:'View Appts',tab:'appointments'});
+  if(!items.length) items.push({icon:'🌱',text:'Your teaching garden is clear today. Keep the good work growing!',action:'Open Analytics',tab:'analytics'});
+
+  const messages=['Small progress is still progress.','One checked record today saves time tomorrow.','You are not behind—you are planting the next step.','Your learners feel the consistency you build.'];
+  const message=messages[today.getDate()%messages.length];
+
+  return <div className={`teacher-field-buddy ${open?'is-open':''}`}>
+    <button className="teacher-field-buddy-toggle" onClick={()=>setOpen(v=>!v)} aria-label={open?'Minimize teacher buddy':'Open teacher buddy'}>
+      <span className="teacher-buddy-sprout">🐦</span><span className="teacher-buddy-pulse"/>
+    </button>
+    {open&&<div className="teacher-field-buddy-card">
+      <div className="teacher-buddy-art" aria-hidden="true"><div className="teacher-buddy-bird">🐦</div><span>🌾</span><span>✦</span></div>
+      <div className="teacher-buddy-copy">
+        <div className="teacher-buddy-kicker">MUNI · YOUR FIELD GUIDE</div>
+        <strong>{profile?.name?.split(',')[0]||'Teacher'}, today’s little check-in:</strong>
+        <p>{items[0].text}</p>
+        <div className="teacher-buddy-message">“{message}”</div>
+        <div className="teacher-buddy-actions">
+          <button onClick={()=>onNavigate?.(items[0].tab)}>{items[0].action}</button>
+          {items.length>1&&<span>+{items.length-1} more</span>}
+        </div>
+      </div>
+    </div>}
+  </div>;
+};
+
+// ─── ADMIN SCHOOL STATISTICS ─────────────────────────────────────────────
+const proficiencyBand = value => {
+  const v=Number(value);
+  if(!Number.isFinite(v)) return null;
+  if(v>=90) return 'Advanced';
+  if(v>=85) return 'Proficient';
+  if(v>=80) return 'Approaching Proficiency';
+  if(v>=75) return 'Developing';
+  return 'Beginning';
+};
+const meanOf = values => values.length ? values.reduce((a,b)=>a+b,0)/values.length : null;
+const medianOf = values => {
+  if(!values.length) return null;
+  const a=[...values].sort((x,y)=>x-y), m=Math.floor(a.length/2);
+  return a.length%2?a[m]:(a[m-1]+a[m])/2;
+};
+const sdOf = values => {
+  if(values.length<2) return 0;
+  const m=meanOf(values); return Math.sqrt(values.reduce((s,v)=>s+(v-m)**2,0)/(values.length-1));
+};
+const round2 = v => v==null ? null : Math.round(v*100)/100;
+
+const AdminSchoolStatistics = ({students,teachers,subjects,subjectAssignments,grades,sections}) => {
+  const [term,setTerm]=useState(1);
+  const [gradeFilter,setGradeFilter]=useState('all');
+  const [teacherFilter,setTeacherFilter]=useState('all');
+  const [subjectFilter,setSubjectFilter]=useState('all');
+  const [view,setView]=useState('school');
+
+  const scopedStudents=students.filter(s=>gradeFilter==='all'||String(s.grade_level)===String(gradeFilter));
+  const scopeIds=new Set(scopedStudents.map(s=>s.id));
+  const topSubjects=subjects.filter(s=>s.grade_level && !s.parent_subject_id && (gradeFilter==='all'||String(s.grade_level)===String(gradeFilter)));
+  const applicable=(sub,st)=>{
+    if(!sub||sub.parent_subject_id||String(sub.grade_level)!==String(st.grade_level)) return false;
+    if(sub.section_id && sub.section_id!==st.section_id) return false;
+    if(sub.tve_qualification && sub.tve_qualification!==st.tve_qualification) return false;
+    return true;
+  };
+  const subjectGrade=(st,sub)=>gradeForTerm(sub,term,subjects,grades.filter(g=>g.student_id===st.id));
+  const studentGsa=scopedStudents.map(st=>{
+    const vals=topSubjects.filter(sub=>applicable(sub,st)).map(sub=>subjectGrade(st,sub)).filter(v=>v!=null).map(Number);
+    return {student:st,values:vals,gsa:round2(meanOf(vals))};
+  }).filter(r=>r.gsa!=null);
+  const schoolVals=studentGsa.map(r=>r.gsa);
+  const schoolGsa=round2(meanOf(schoolVals));
+  const schoolMedian=round2(medianOf(schoolVals));
+  const schoolSd=round2(sdOf(schoolVals));
+  const se=schoolVals.length>1?schoolSd/Math.sqrt(schoolVals.length):0;
+  const ci95=schoolGsa==null?null:[round2(schoolGsa-1.96*se),round2(schoolGsa+1.96*se)];
+  const cv=schoolGsa?round2((schoolSd/schoolGsa)*100):null;
+  const bands=['Advanced','Proficient','Approaching Proficiency','Developing','Beginning'].map(label=>({label,value:schoolVals.filter(v=>proficiencyBand(v)===label).length}));
+
+  const rows=topSubjects.map(sub=>{
+    const assigned=subjectAssignments.filter(a=>a.subject_id===sub.id);
+    const assignedTeacherIds=[...new Set(assigned.map(a=>a.teacher_id).filter(Boolean))];
+    const vals=scopedStudents.filter(st=>applicable(sub,st)).map(st=>subjectGrade(st,sub)).filter(v=>v!=null).map(Number);
+    const counts=['Advanced','Proficient','Approaching Proficiency','Developing','Beginning'].map(label=>({label,value:vals.filter(v=>proficiencyBand(v)===label).length}));
+    const names=assignedTeacherIds.map(id=>teachers.find(t=>t.id===id)?.name).filter(Boolean);
+    return {sub,teachers:names,vals,mean:round2(meanOf(vals)),median:round2(medianOf(vals)),sd:round2(sdOf(vals)),pass:vals.length?round2(vals.filter(v=>v>=75).length/vals.length*100):0,counts,teacherIds:assignedTeacherIds};
+  }).filter(r=>subjectFilter==='all'||r.sub.id===subjectFilter);
+
+  const teacherRows=teachers.map(t=>{
+    const assignedSubjectIds=[...new Set(subjectAssignments.filter(a=>a.teacher_id===t.id).map(a=>a.subject_id))];
+    const rs=rows.filter(r=>r.teacherIds.includes(t.id) && assignedSubjectIds.includes(r.sub.id));
+    const vals=rs.flatMap(r=>r.vals);
+    return {teacher:t,rows:rs,mean:round2(meanOf(vals)),count:vals.length};
+  }).filter(r=>r.rows.length && (teacherFilter==='all'||r.teacher.id===teacherFilter));
+
+  const gradeRows=GRADE_LEVELS.map(gl=>{
+    const vals=studentGsa.filter(r=>Number(r.student.grade_level)===gl).map(r=>r.gsa);
+    return {label:`Grade ${gl}`,value:round2(meanOf(vals)),n:vals.length};
+  }).filter(r=>r.n);
+  const selectedRows=teacherFilter==='all' ? rows : rows.filter(r=>r.teacherIds.includes(teacherFilter));
+  const filteredSchoolVals=teacherFilter==='all'&&subjectFilter==='all'?schoolVals:selectedRows.flatMap(r=>r.vals);
+  const filteredGsa=round2(meanOf(filteredSchoolVals));
+  const filteredBands=['Advanced','Proficient','Approaching Proficiency','Developing','Beginning'].map(label=>({label,value:filteredSchoolVals.filter(v=>proficiencyBand(v)===label).length}));
+  const totalPossible=rows.reduce((n,r)=>n+r.vals.length,0);
+  const passing=filteredSchoolVals.filter(v=>v>=75).length;
+  const passingRate=filteredSchoolVals.length?round2(passing/filteredSchoolVals.length*100):null;
+  const exportCSV=()=>{
+    const header=['Subject','Teacher(s)','GSA/Mean','Median','SD','Pass %','Advanced','Proficient','Approaching Proficiency','Developing','Beginning'];
+    const lines=[header,...rows.map(r=>[r.sub.name,r.teachers.join(' | '),r.mean??'',r.median??'',r.sd??'',r.pass,...r.counts.map(c=>c.value)])]
+      .map(row=>row.map(v=>`"${String(v).replaceAll('\"','\"\"')}"`).join(','));
+    const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`AGRIANS_GSA_Proficiency_Term${term}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  return <div className="admin-statistics">
+    <div className="admin-stat-head">
+      <div><div className="insight-kicker">SCHOOL ACADEMIC INTELLIGENCE</div><h2>📊 GSA & Proficiency Observatory</h2><p>Consolidates grades from every teacher assignment into one school-level statistical view.</p></div>
+      <div className="admin-stat-controls">
+        <select value={term} onChange={e=>setTerm(parseInt(e.target.value))}><option value={1}>Term 1</option><option value={2}>Term 2</option><option value={3}>Term 3</option></select>
+        <select value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)}><option value="all">All grades</option>{GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}</select>
+        <select value={teacherFilter} onChange={e=>setTeacherFilter(e.target.value)}><option value="all">All teachers</option>{teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select>
+        <select value={subjectFilter} onChange={e=>setSubjectFilter(e.target.value)}><option value="all">All subjects</option>{topSubjects.map(s=><option key={s.id} value={s.id}>{s.name} · Gr.{s.grade_level}</option>)}</select><button className="admin-stat-export" onClick={exportCSV}>⬇ Export CSV</button>
+      </div>
+    </div>
+
+    <div className="admin-stat-kpis">
+      {[['🎯',filteredGsa??'—','GSA'],['👥',filteredSchoolVals.length,'GSA observations'],['✅',passingRate!=null?`${passingRate}%`:'—','Passing rate'],['📐',schoolSd??'—','Standard deviation'],['📍',ci95?`${ci95[0]}–${ci95[1]}`:'—','95% CI for GSA']].map((x,i)=><Card key={i} className="admin-stat-kpi"><span>{x[0]}</span><strong>{x[1]}</strong><small>{x[2]}</small></Card>)}
+    </div>
+
+    <div className="admin-stat-view-tabs">
+      {[['school','🏫 School'],['teachers','👨‍🏫 Teachers'],['subjects','📚 Subjects'],['inference','🧪 Inferential']].map(([id,label])=><button key={id} className={view===id?'active':''} onClick={()=>setView(id)}>{label}</button>)}
+    </div>
+
+    {view==='school'&&<>
+      <div className="admin-stat-two-col">
+        <Card><div className="stat-card-title">Overall school GSA</div><div className="stat-big-number">{schoolGsa??'—'}</div><div className="stat-muted">Term {term} · based on learner-level general averages</div><MiniBarChart data={bands} label="Learners by GSA proficiency band"/></Card>
+        <Card><div className="stat-card-title">GSA by grade level</div>{gradeRows.length?gradeRows.map(r=><div className="stat-grade-row" key={r.label}><span>{r.label}</span><div className="stat-track"><i style={{width:`${Math.min(100,r.value||0)}%`}}/></div><strong>{r.value}</strong><small>n={r.n}</small></div>):<div className="stat-muted">No complete GSA observations yet.</div>}</Card>
+      </div>
+      <Card><div className="stat-card-title">School proficiency distribution</div><MiniBarChart data={filteredBands} label="GSA counts by proficiency level" height={170}/><div className="proficiency-legend">{filteredBands.map(b=><span key={b.label}><b>{b.value}</b> {b.label}</span>)}</div></Card>
+    </>}
+
+    {view==='teachers'&&<Card><div className="stat-card-title">Teacher contribution to academic performance</div><div className="admin-stat-table-wrap"><table className="admin-stat-table"><thead><tr><th>Teacher</th><th>Subjects</th><th>Observations</th><th>Mean grade</th></tr></thead><tbody>{teacherRows.sort((a,b)=>(b.mean??-1)-(a.mean??-1)).map(r=><tr key={r.teacher.id}><td>{r.teacher.name}</td><td>{r.rows.map(x=>x.sub.name).join(', ')}</td><td>{r.count}</td><td><strong>{r.mean??'—'}</strong></td></tr>)}</tbody></table></div></Card>}
+
+    {view==='subjects'&&<Card><div className="stat-card-title">Every teacher subject · GSA · proficiency counts</div><div className="admin-stat-table-wrap"><table className="admin-stat-table"><thead><tr><th>Subject / Teacher</th><th>GSA</th><th>Pass %</th><th>Advanced</th><th>Proficient</th><th>Approaching</th><th>Developing</th><th>Beginning</th></tr></thead><tbody>{rows.sort((a,b)=>(b.mean??-1)-(a.mean??-1)).map(r=><tr key={r.sub.id}><td><strong>{r.sub.name}</strong><small>{r.teachers.length?r.teachers.join(' · '):'Unassigned'}</small></td><td><strong>{r.mean??'—'}</strong><small>Median {r.median??'—'} · SD {r.sd??'—'}</small></td><td>{r.pass}%</td>{r.counts.map(c=><td key={c.label}>{c.value}</td>)}</tr>)}</tbody></table></div></Card>}
+
+    {view==='inference'&&<div className="admin-stat-two-col">
+      <Card><div className="stat-card-title">Inferential statistics</div><div className="stat-method-row"><span>Mean</span><strong>{schoolGsa??'—'}</strong></div><div className="stat-method-row"><span>Median</span><strong>{schoolMedian??'—'}</strong></div><div className="stat-method-row"><span>SD</span><strong>{schoolSd??'—'}</strong></div><div className="stat-method-row"><span>Coefficient of variation</span><strong>{cv!=null?`${cv}%`:'—'}</strong></div><div className="stat-method-row"><span>95% confidence interval</span><strong>{ci95?`${ci95[0]} to ${ci95[1]}`:'—'}</strong></div></Card>
+      <Card><div className="stat-card-title">Interpretation guide</div><ul className="stat-guide"><li><b>GSA</b> summarizes the learner-level average across applicable subjects.</li><li><b>SD</b> shows how spread out learner GSAs are around the school mean.</li><li><b>95% CI</b> estimates the range for the underlying mean when the observed learners are treated as a sample.</li><li><b>CV</b> expresses variation relative to the mean and helps compare consistency across terms.</li><li>Use the filters to compare grades, teachers, or subjects before making instructional decisions.</li></ul></Card>
+    </div>}
+    <div className="admin-stat-footnote">Proficiency bands used: Advanced 90–100 · Proficient 85–89 · Approaching Proficiency 80–84 · Developing 75–79 · Beginning below 75. MAPEH parent rows are resolved from their components and are not double-counted.</div>
+  </div>;
+};
+
 // ─── TEACHER DASHBOARD ───────────────────────────────────
 const TeacherDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("encode");
@@ -2899,6 +3107,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         sub={`Teacher${mySection?" · Adviser: "+mySection.name:""}${profile.is_curriculum_head?" · Curriculum Head Gr."+profile.assigned_grade_level:""}`}
         onLogout={onLogout}/>
       <Toast msg={toast}/>
+      <TeacherFieldBuddy profile={profile} subjects={subjects} subjectAssignments={subjectAssignments} sections={sections} mySection={mySection} classStudents={classStudents} appointments={appointments} onNavigate={setTab}/>
       <div className="teacher-welcome-wrap">
         <WelcomePanel profile={profile} role="teacher" stats={[
           {icon:"👥",value:mySection?classStudents.length:(profile.is_curriculum_head?`Gr.${profile.assigned_grade_level}`:"—"),label:mySection?"Advisory learners":profile.is_curriculum_head?"Curriculum grade":"Teaching scope"},
@@ -4223,6 +4432,8 @@ const AdminDashboard = ({ profile, onLogout }) => {
           </div>
         )}
 
+        {tab==="statistics"&&(<AdminSchoolStatistics students={students} teachers={teachers} subjects={subjects} subjectAssignments={subjectAssignments} grades={grades} sections={sections}/>)}
+
         {tab==="settings"&&(
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:12}}>
@@ -4862,7 +5073,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
       <BottomNav
         tabs={[
-          ["📊","Overview","overview"],["⚙️","Settings","settings"],
+          ["📊","Overview","overview"],["📈","Statistics","statistics"],["⚙️","Settings","settings"],
           ["🎓","Students","students"],["👨‍🏫","Teachers","teachers"],
           ["🏫","Sections","sections"],["📚","Subjects","subjects"],
           ["📝","Grades","grades"],["📅","Calendar","calendar"],
