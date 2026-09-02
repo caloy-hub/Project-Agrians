@@ -2371,14 +2371,17 @@ const TeacherAnalytics = ({profile, subjects, subjectAssignments, sections, mySe
   const isAdviser=!!mySection;
   const availableSubjects=subjects.filter(s=>!isMapehParent(s,subjects));
 
-  // Build the subject list from the teacher's assignments, not from a single
-  // joined Supabase relationship. This keeps every assigned subject visible.
+  // Build the subject list from the teacher's real assignments first, then
+  // layer on the adviser/Curriculum-Head grade-wide visibility. These used to
+  // be exclusive (isCH ? ... : isAdviser ? ... : assignments-only), which
+  // meant an adviser or CH with a genuine subject_assignments row outside
+  // their homeroom/assigned grade level would see it vanish entirely — the
+  // grade-level branch overrode the real assignment instead of adding to it.
   const assignedSubjectIds=[...new Set(subjectAssignments.map(a=>a.subject_id).filter(Boolean))];
-  const teacherSubjects=isCH
-    ? availableSubjects.filter(s=>s.grade_level===profile.assigned_grade_level)
-    : isAdviser
-      ? availableSubjects.filter(s=>s.grade_level===mySection?.grade_level)
-      : availableSubjects.filter(s=>assignedSubjectIds.includes(s.id));
+  const teacherSubjects=availableSubjects.filter(s=>
+    assignedSubjectIds.includes(s.id)
+    || (isCH&&s.grade_level===profile.assigned_grade_level)
+    || (isAdviser&&s.grade_level===mySection?.grade_level));
 
   const selectedSubject=teacherSubjects.find(s=>s.id===selSubject);
   const assignments=selectedSubject
