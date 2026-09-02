@@ -2683,22 +2683,25 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     setLoading(true);
     const [sR,asR,aR,secR,qR,holR]=await Promise.all([
       supabase.from("subjects").select("*").eq("teacher_id",profile.id),
-      supabase.from("subject_assignments").select("*, subject:subjects(*)").eq("teacher_id",profile.id),
+      supabase.from("subject_assignments").select("id,subject_id,teacher_id,section_id").eq("teacher_id",profile.id),
       supabase.from("appointments").select("*").eq("teacher_id",profile.id),
       supabase.from("sections").select("*").eq("adviser_id",profile.id).single(),
       supabase.from("tve_qualifications").select("*").order("name"),
       supabase.from("school_holidays").select("*").order("date"),
     ]);
-    if (asR.data) setSubjectAssignments(asR.data);
-    // Assignment rows are now the source of truth. Keep the legacy subjects.teacher_id
-    // fallback so an existing deployment remains usable while the migration is applied.
-    if (asR.data?.length) {
-      const unique = new Map();
-      asR.data.forEach(a=>{
-        const sub=a.subject;
-        if (sub) unique.set(sub.id, sub);
-      });
-      (sR.data||[]).forEach(sub=>{ if (!unique.has(sub.id)) unique.set(sub.id, sub); });
+    const assignmentRows=asR.data||[];
+    if (assignmentRows.length) setSubjectAssignments(assignmentRows);
+    // Resolve subjects independently by ID. This guarantees that every assignment
+    // is represented even when PostgREST does not return the nested subject object.
+    if (assignmentRows.length) {
+      const assignedIds=[...new Set(assignmentRows.map(a=>a.subject_id).filter(Boolean))];
+      let assignedSubjects=[];
+      if (assignedIds.length) {
+        const {data}=await supabase.from("subjects").select("*").in("id",assignedIds);
+        assignedSubjects=data||[];
+      }
+      const unique=new Map(assignedSubjects.map(sub=>[sub.id,sub]));
+      (sR.data||[]).forEach(sub=>{ if(!unique.has(sub.id)) unique.set(sub.id,sub); });
       setSubjects(Array.from(unique.values()));
     } else if (sR.data) setSubjects(sR.data);
     if (aR.data) setAppointments(aR.data);
