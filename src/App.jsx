@@ -368,7 +368,12 @@ const edgeCall = async (fn, body) => {
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`,
       { method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${session.access_token}`},
+        // Supabase's gateway expects BOTH apikey and Authorization on direct
+        // fetch() calls to /functions/v1/* — supabase.functions.invoke() adds
+        // apikey automatically, but a raw fetch (needed here to stream back
+        // binary/blob responses) has to set it explicitly or the gateway can
+        // reject the request before it even reaches the function code.
+        headers:{"Content-Type":"application/json","apikey":import.meta.env.VITE_SUPABASE_ANON_KEY,"Authorization":`Bearer ${session.access_token}`},
         body:JSON.stringify(body) }
     );
     let json;
@@ -3097,7 +3102,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       const callGenerate=async(tkn)=>fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-certificate`,
         {method:"POST",
-         headers:{"Content-Type":"application/json",Authorization:`Bearer ${tkn}`},
+         headers:{"Content-Type":"application/json","apikey":import.meta.env.VITE_SUPABASE_ANON_KEY,Authorization:`Bearer ${tkn}`},
          body:JSON.stringify({
            student_id:student.id,period_label:termText,
            average,honor_title:"ACADEMIC EXCELLENCE AWARD",
@@ -3143,7 +3148,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       const res=await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-sf9`,
         {method:"POST",
-         headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+         headers:{"Content-Type":"application/json","apikey":import.meta.env.VITE_SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`},
          body:JSON.stringify({
            student_id:student.id,section_id:mySection.id,
            term:sf9Term,school_year:"2026-2027",
@@ -3154,13 +3159,19 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         notify("❌ "+(err.error||"Failed to generate SF9"));
         return;
       }
+      const warningHeader=res.headers.get("X-Encoding-Warning");
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url; a.download=`SF9_${student.name.replace(/\s+/g,"_")}_${periodLabel.replace(/\s+/g,"_")}.pdf`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      notify("✅ SF9 downloaded!");
+      if (warningHeader) {
+        setToast("⚠️ Downloaded, but "+decodeURIComponent(warningHeader));
+        setTimeout(()=>setToast(""),8000);
+      } else {
+        notify("✅ SF9 downloaded!");
+      }
     } catch (e) {
       notify("❌ "+String(e.message||e));
     }
@@ -3176,7 +3187,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       const res=await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-sf2`,
         {method:"POST",
-         headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+         headers:{"Content-Type":"application/json","apikey":import.meta.env.VITE_SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`},
          body:JSON.stringify({
            section_id:mySection.id, month:sf2Month.month, year:sf2Month.year, term:sf2Month.term,
          })}
@@ -4279,7 +4290,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
     try {
       const res=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fnName}`,
         {method:"POST",
-         headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+         headers:{"Content-Type":"application/json","apikey":import.meta.env.VITE_SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`},
          body:JSON.stringify(body)});
       if (!res.ok) {
         const err=await res.json().catch(()=>({error:"Failed to generate "+filename}));
