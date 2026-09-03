@@ -2747,6 +2747,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [qualifications,setQualifications]=useState([]); // admin-managed TVE qualification names
   const [chStudents,setChStudents]=useState([]); // Curriculum Head: all students in their assigned grade level
   const [editStudent,setEditStudent]=useState(null); // Curriculum Head: learner being corrected
+  const isAdviser=!!mySection;
 
   const notify=m=>{setToast(m);setTimeout(()=>setToast(""),2500);};
 
