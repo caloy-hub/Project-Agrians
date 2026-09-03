@@ -2833,14 +2833,20 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     })();
   },[tab,mySection,honorsScope,classStudents]);
 
-  // Compute each student's per-term and final general average from classGrades
+  // Compute each student's per-term and final general average from classGrades.
+  // MAPEH is never graded directly — it's split into two components ("PE and
+  // Health" and "Music and Arts") linked via parent_subject_id. Must go
+  // through gradeForTerm (like every other average calc in the app) so MAPEH
+  // counts as ONE subject instead of double-counting its two components.
   const computeHonorsRoll=()=>{
     const studentsInScope=honorsScope==="grade"?gradeLevelStudents:classStudents;
-    const subjectIds=allGradeSubjects.map(s=>s.id);
+    const countedSubjects=allGradeSubjects.filter(s=>!s.parent_subject_id);
     return studentsInScope.map(stu=>{
-      const myGrades=classGrades.filter(g=>g.student_id===stu.id&&subjectIds.includes(g.subject_id));
+      const myGrades=classGrades.filter(g=>g.student_id===stu.id);
       const termAvgs=[1,2,3].map(term=>{
-        const termGrades=myGrades.filter(g=>g.term===term).map(g=>g.grade);
+        const termGrades=countedSubjects
+          .map(sub=>gradeForTerm(sub,term,allGradeSubjects,myGrades))
+          .filter(v=>v!==null);
         if (termGrades.length===0) return null;
         return Math.round((termGrades.reduce((a,b)=>a+b,0)/termGrades.length)*100)/100;
       });
