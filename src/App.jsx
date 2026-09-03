@@ -3072,27 +3072,52 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const termText=periodLabel.startsWith("Term")
       ?periodLabel.toUpperCase()
       :"FINAL AVERAGE";
-    const {data:sessionData}=await supabase.auth.getSession();
-    const token=sessionData?.session?.access_token;
+
+    // getSession() can hand back a *stale* cached access token — e.g. after the
+    // tab sat idle/backgrounded and missed its auto-refresh window — without
+    // erroring, which is what caused 401s here even though a "session" existed.
+    // Proactively refresh first, and if the server still says 401, refresh
+    // once more and retry before giving up.
+    const getFreshToken=async(forceRefresh)=>{
+      if (forceRefresh) {
+        const {data,error}=await supabase.auth.refreshSession();
+        if (!error && data?.session?.access_token) return data.session.access_token;
+      }
+      const {data:sessionData}=await supabase.auth.getSession();
+      return sessionData?.session?.access_token||null;
+    };
+
+    let token=await getFreshToken(true);
     if (!token) {
       notify("❌ Your session has expired. Please log in again.");
       return;
     }
     notify("⏳ Generating certificate...");
     try {
-      const res=await fetch(
+      const callGenerate=async(tkn)=>fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-certificate`,
         {method:"POST",
-         headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+         headers:{"Content-Type":"application/json",Authorization:`Bearer ${tkn}`},
          body:JSON.stringify({
            student_id:student.id,period_label:termText,
            average,honor_title:"ACADEMIC EXCELLENCE AWARD",
            school_year:"2026-2027",day,month,
          })}
       );
+      let res=await callGenerate(token);
+      if (res.status===401) {
+        // Token was rejected server-side even after a client-side refresh —
+        // try one hard refresh + retry before surfacing an error.
+        const retryToken=await getFreshToken(true);
+        if (retryToken && retryToken!==token) res=await callGenerate(retryToken);
+      }
       if (!res.ok) {
         const err=await res.json().catch(()=>({error:"Failed to generate certificate"}));
-        notify("❌ "+(err.error||"Failed to generate certificate"));
+        if (res.status===401) {
+          notify("❌ Your session has expired. Please log in again.");
+        } else {
+          notify("❌ "+(err.error||"Failed to generate certificate"));
+        }
         return;
       }
       const blob=await res.blob();
