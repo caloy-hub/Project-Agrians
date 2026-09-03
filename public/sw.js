@@ -1,4 +1,4 @@
-const CACHE = 'agrians-v27-shell';
+const CACHE = 'agrians-v28-shell';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -20,7 +20,14 @@ self.addEventListener('fetch', event => {
   if (networkFirst) {
     event.respondWith(
       fetch(req).then(res => {
-        if (res.ok) caches.open(CACHE).then(cache => cache.put(req, res.clone()));
+        // clone() must run before the response body is consumed anywhere else
+        // (e.g. by the caller reading `res`) — cloning it inside the async
+        // caches.open().then() below happens too late and throws "Response
+        // body is already used".
+        if (res.ok) {
+          const resToCache = res.clone();
+          caches.open(CACHE).then(cache => cache.put(req, resToCache));
+        }
         return res;
       }).catch(() => caches.match(req).then(cached => cached || caches.match('/index.html')))
     );
@@ -29,9 +36,11 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(req).then(cached => cached || fetch(req).then(res => {
       if (res.ok && (req.destination === 'image' || req.destination === 'font')) {
-        caches.open(CACHE).then(cache => cache.put(req, res.clone()));
+        const resToCache = res.clone();
+        caches.open(CACHE).then(cache => cache.put(req, resToCache));
       }
       return res;
     }).catch(() => caches.match('/index.html')))
   );
+});
 });
