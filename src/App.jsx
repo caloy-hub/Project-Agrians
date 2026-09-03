@@ -2838,6 +2838,21 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     })();
   },[tab,mySection,honorsScope,classStudents]);
 
+  // Adviser's class view refreshes when a subject teacher saves a grade.
+  useEffect(()=>{
+    if (!mySection || !isAdviser) return;
+    const ch=supabase.channel(`adviser-grades-${mySection.id}`)
+      .on("postgres_changes",{event:"*",schema:"public",table:"grades"},async()=>{
+        if (tab!=="honors"&&tab!=="myclass") return;
+        const scopeStudents=(tab==="honors"&&honorsScope==="grade")?gradeLevelStudents:classStudents;
+        const ids=scopeStudents.map(s=>s.id);
+        if (!ids.length) return;
+        const {data}=await supabase.from("grades").select("*").in("student_id",ids);
+        if (data) setClassGrades(data);
+      }).subscribe();
+    return ()=>supabase.removeChannel(ch);
+  },[mySection?.id,isAdviser,tab,honorsScope,classStudents,gradeLevelStudents]);
+
   // Compute each student's per-term and final general average from classGrades.
   // MAPEH is never graded directly — it's split into two components ("PE and
   // Health" and "Music and Arts") linked via parent_subject_id. Must go
@@ -2845,7 +2860,11 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   // counts as ONE subject instead of double-counting its two components.
   const computeHonorsRoll=()=>{
     const studentsInScope=honorsScope==="grade"?gradeLevelStudents:classStudents;
-    const countedSubjects=allGradeSubjects.filter(s=>!s.parent_subject_id);
+    const countedSubjects=allGradeSubjects.filter(s=>
+      !s.parent_subject_id
+      && s.grade_level===mySection?.grade_level
+      && (!s.section_id || honorsScope==="grade" || s.section_id===mySection?.id)
+    );
     return studentsInScope.map(stu=>{
       const myGrades=classGrades.filter(g=>g.student_id===stu.id);
       const termAvgs=[1,2,3].map(term=>{

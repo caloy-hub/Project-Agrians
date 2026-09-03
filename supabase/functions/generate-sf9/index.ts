@@ -26,6 +26,7 @@ import {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Expose-Headers": "X-Encoding-Warning",
 };
 
 // ---------- CONSTANTS (mirrors generate_sf9_v2.py) ----------
@@ -266,13 +267,13 @@ serve(async (req: Request) => {
     const subjectById: Record<string, any> = {};
     for (const s of subjects) subjectById[s.id] = s;
 
-    // grade lookup: subjectName -> { 1: val, 2: val, 3: val }
+    // Grade lookup by subject ID. Subject names are display labels and are not
+    // guaranteed unique, so report calculations must never use the name as a key.
     const gradeMap: Record<string, Record<number, number>> = {};
     for (const g of grades) {
-      const subj = subjectById[g.subject_id];
-      if (!subj) continue;
-      if (!gradeMap[subj.name]) gradeMap[subj.name] = {};
-      gradeMap[subj.name][g.term] = g.grade;
+      if (!subjectById[g.subject_id]) continue;
+      if (!gradeMap[g.subject_id]) gradeMap[g.subject_id] = {};
+      gradeMap[g.subject_id][g.term] = Number(g.grade);
     }
 
     // Canonical attendance lookup: every monthly total is read from the same
@@ -288,20 +289,29 @@ serve(async (req: Request) => {
     });
     const attResults = await Promise.all(monthDefs.map(async def=>{
       const parts:any[]=[];
+      const errs:string[]=[];
       for (const t of def.terms) {
         const {data,error}=await adminClient.rpc("agrians_student_attendance_summary",{
           p_student_id:student_id,p_month:def.m,p_year:def.y,p_term:t
         });
-        if(error) throw new Error(error.message);
+        // agrians_student_attendance_summary intentionally throws if the
+        // admin-configured school_calendar day count for this month/term is
+        // out of sync with the actual calculated school days (a real data
+        // problem worth fixing). But one stale calendar row shouldn't block
+        // an entire learner's report from generating — show that month as
+        // "not yet encoded" here and surface a warning instead of a hard 500.
+        if(error) { errs.push(`${def.label} (Term ${t})`); continue; }
         if(Array.isArray(data)&&data[0]) parts.push(data[0]);
       }
       const total=parts.reduce((n,r)=>n+(Number(r.total_days)||0),0);
       const present=parts.reduce((n,r)=>n+(Number(r.total_present)||0),0);
       const encoded=parts.some(r=>!!r.encoded);
-      return {label:def.label,present:encoded?Math.min(Math.max(present,0),total):0,total,encoded};
+      const calendarError=errs.length>0&&parts.length===0;
+      return {label:def.label,present:encoded&&!calendarError?Math.min(Math.max(present,0),total):0,total:calendarError?0:total,encoded:encoded&&!calendarError,calendarError};
     }));
     const attByMonth: Record<string, { present:number; total:number; encoded:boolean }> = {};
     attResults.forEach(r=>{attByMonth[r.label]=r;});
+    const calendarMismatchMonths = attResults.filter(r=>r.calendarError).map(r=>r.label);
 
     // ---------- Build PDF ----------
     const pdfDoc = await PDFDocument.create();
@@ -501,12 +511,13 @@ serve(async (req: Request) => {
           if (childSubjs.length > 0) {
             for (let t = 1; t <= 3; t++) {
               const vals = childSubjs
-                .map((c: any) => gradeMap[c.name]?.[t])
+                .map((c: any) => gradeMap[c.id]?.[t])
                 .filter((v: any) => v !== undefined && v !== null) as number[];
               if (vals.length) g[t] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
             }
           } else {
-            g = gradeMap[lookupName] || {};
+            const directSubj = subjects.find((s: any) => s.name === lookupName && !s.parent_subject_id);
+            g = directSubj ? (gradeMap[directSubj.id] || {}) : {};
           }
 
           let final: number | null = null;
@@ -622,7 +633,7 @@ serve(async (req: Request) => {
         for (const m of MONTHS) {
           const att = attByMonth[m];
           let val = "";
-          if (att) {
+          if (att && !att.calendarError) {
             if (kind === "total") val = String(att.total);
             else if (kind === "present") val = String(att.present);
             else val = String(Math.max(att.total - att.present, 0));
@@ -716,6 +727,9 @@ serve(async (req: Request) => {
         ...corsHeaders,
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="SF9_${(student.name || "student").replace(/\s+/g, "_")}.pdf"`,
+        ...(calendarMismatchMonths.length ? { "X-Encoding-Warning": encodeURIComponent(
+          `the school calendar's configured day count doesn't match the calculated days for: ${calendarMismatchMonths.join(", ")} — those months show as not-yet-encoded until the School Calendar entry is corrected.`
+        ) } : {}),
       },
     });
   } catch (err) {

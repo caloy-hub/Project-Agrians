@@ -20,7 +20,6 @@ import {
   PDFPage,
   PDFImage,
 } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -134,19 +133,12 @@ serve(async (req: Request) => {
 
     // ---------- Build PDF ----------
     const pdfDoc = await PDFDocument.create();
-    pdfDoc.registerFontkit(fontkit);
     const page = pdfDoc.addPage([PAGE_W, PAGE_H]);
 
     const fReg = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const fBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
-    let fBlack: PDFFont = fBold; // fallback if custom font fetch fails
-    try {
-      const blackletterBytes = await fetch(
-        `${Deno.env.get("SUPABASE_URL")}/storage/v1/object/public/branding/blackletter.ttf`,
-      ).then((r) => r.arrayBuffer());
-      fBlack = await pdfDoc.embedFont(blackletterBytes);
-    } catch (_e) { /* falls back to Times-Bold */ }
+    const fBlack: PDFFont = fBold;
 
     let depedImg: PDFImage | null = null;
     try {
@@ -205,7 +197,7 @@ serve(async (req: Request) => {
 
     d.centered(cx, y, "in recognition of your meritorious and outstanding academic performance", fReg, 12.5);
     y -= 6.2 * MM;
-    d.centered(cx, y, "which made you achieved the", fReg, 12.5);
+    d.centered(cx, y, "which earned you the", fReg, 12.5);
     y -= 9 * MM;
 
     d.centered(cx, y, (honor_title || "ACADEMIC EXCELLENCE AWARD").toUpperCase(), fBold, 19, NAVY);
