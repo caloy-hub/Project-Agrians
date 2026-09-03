@@ -3068,13 +3068,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     const month=prompt("Enter the month (e.g. December):");
     if (!month) return;
 
-    notify("⏳ Generating certificate...");
     // Certificate's TERM line: "Term 1" -> "TERM 1", "Final / Year-End" -> "FINAL AVERAGE"
     const termText=periodLabel.startsWith("Term")
       ?periodLabel.toUpperCase()
       :"FINAL AVERAGE";
     const {data:sessionData}=await supabase.auth.getSession();
     const token=sessionData?.session?.access_token;
+    if (!token) {
+      notify("❌ Your session has expired. Please log in again.");
+      return;
+    }
+    notify("⏳ Generating certificate...");
     try {
       const res=await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-certificate`,
@@ -4849,6 +4853,87 @@ const AdminDashboard = ({ profile, onLogout }) => {
               Assign by <strong>Subject + Section + Teacher</strong>. One subject can now have many teachers,
               and each teacher can be assigned to different sections without creating duplicate subject records.
             </div>
+
+            <Card style={{marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Subject</div>
+              <div style={{display:"grid",gap:8,marginBottom:8}}>
+                <input placeholder="Subject Name * e.g. Mathematics" value={nSubject.name}
+                  onChange={e=>setNSubject(p=>({...p,name:e.target.value}))}/>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <select value={nSubject.grade_level}
+                    onChange={e=>setNSubject(p=>({...p,grade_level:e.target.value,tve_qualification:""}))}>
+                    {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
+                  </select>
+                  <select value={nSubject.section_id}
+                    onChange={e=>setNSubject(p=>({...p,section_id:e.target.value}))}>
+                    <option value="">-- All sections in grade --</option>
+                    {sections.filter(s=>s.grade_level===parseInt(nSubject.grade_level)).map(s=>
+                      <option key={s.id} value={s.id}>{s.name} only</option>)}
+                  </select>
+                </div>
+                {parseInt(nSubject.grade_level)>=8&&parseInt(nSubject.grade_level)<=10&&(
+                  <select value={nSubject.tve_qualification}
+                    onChange={e=>setNSubject(p=>({...p,tve_qualification:e.target.value}))}>
+                    <option value="">-- TVE Qualification (opt) --</option>
+                    {qualifications.map(q=><option key={q.name} value={q.name}>{q.name}</option>)}
+                  </select>
+                )}
+                <select value={nSubject.teacher_id}
+                  onChange={e=>setNSubject(p=>({...p,teacher_id:e.target.value}))}>
+                  <option value="">-- Assign Teacher (opt) --</option>
+                  {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                {nSubject.name.trim().toUpperCase()==="MAPEH"&&(
+                  <div style={{fontSize:10,color:T.textMuted,padding:"6px 8px",background:"#f3e5f5",borderRadius:6}}>
+                    🧩 MAPEH is never graded directly — "PE and Health" and "Music and Arts"
+                    components will be created automatically underneath it.
+                  </div>
+                )}
+              </div>
+              <Btn onClick={addSubject} style={{width:"100%"}}>➕ Add Subject</Btn>
+            </Card>
+
+            <Card style={{marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>📋 All Subjects</div>
+              {GRADE_LEVELS.map(gl=>{
+                const glSubs=subjects.filter(s=>s.grade_level===gl&&!s.parent_subject_id);
+                if (!glSubs.length) return null;
+                return (
+                  <div key={gl} style={{marginBottom:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.white,background:T.green1,
+                      padding:"4px 10px",borderRadius:6,marginBottom:6}}>Grade {gl}</div>
+                    {glSubs.map(sub=>{
+                      const sec=sections.find(s=>s.id===sub.section_id);
+                      const assignedCount=assignmentRowsFor(sub.id).length;
+                      return (
+                        <div key={sub.id} style={{display:"flex",justifyContent:"space-between",
+                          alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f0f0f0"}}>
+                          <div>
+                            <div style={{fontWeight:700,fontSize:12,color:T.text}}>{sub.name}</div>
+                            <div style={{fontSize:10,color:T.textMuted}}>
+                              {sec?sec.name:"All sections"}
+                              {sub.tve_qualification?` · ${sub.tve_qualification}`:""}
+                              {" · "}{assignedCount} teacher{assignedCount===1?"":"s"} assigned
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:4,flexShrink:0}}>
+                            <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
+                              onClick={()=>setEditSubject(sub)}>✏️</Btn>
+                            <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
+                              onClick={()=>{
+                                if (window.confirm(`Delete "${sub.name}" (Grade ${sub.grade_level})? This also deletes every recorded grade for this subject${sub.name.trim().toUpperCase()==="MAPEH"?" and its PE and Health / Music and Arts components":""}. This cannot be undone.`)) delSubject(sub.id);
+                              }}>🗑️</Btn>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {subjects.filter(s=>!s.parent_subject_id).length===0&&(
+                <div style={{padding:16,textAlign:"center",color:T.gray,fontSize:12}}>No subjects yet. Add one above.</div>
+              )}
+            </Card>
 
             <Card style={{marginBottom:12,padding:10}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
