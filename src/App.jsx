@@ -764,7 +764,8 @@ const AddStudentForm = ({ sections, gradeFilter, onAdd, loading, qualifications 
   const [form,setForm]=useState({
     name:"",lrn:"",grade_level:gradeFilter||7,section_id:"",
     gender:"Male",birthday:"",address:"",email:"",password:"",
-    tve_qualification:"",grade11_track:"",grade11_techpro_choice:"",grade12_track:""
+    tve_qualification:"",grade11_track:"",grade11_techpro_choice:"",grade12_track:"",
+    curriculum:"regular"
   });
   const effectiveGrade=parseInt(gradeFilter||form.grade_level);
   const needsTve=effectiveGrade>=8&&effectiveGrade<=10; // TVE qualification applies to Grades 8-10 only
@@ -774,36 +775,42 @@ const AddStudentForm = ({ sections, gradeFilter, onAdd, loading, qualifications 
   const availSections=gradeFilter
     ?sections.filter(s=>s.grade_level===parseInt(gradeFilter))
     :sections.filter(s=>s.grade_level===parseInt(form.grade_level));
+  const isAls=form.curriculum==="als";
   const resetForm=()=>setForm({name:"",lrn:"",grade_level:gradeFilter||7,section_id:"",
     gender:"Male",birthday:"",address:"",email:"",password:"",
-    tve_qualification:"",grade11_track:"",grade11_techpro_choice:"",grade12_track:""});
+    tve_qualification:"",grade11_track:"",grade11_techpro_choice:"",grade12_track:"",
+    curriculum:"regular"});
   const submit=()=>{
     if (needsTve&&!form.tve_qualification){
       alert("Please select the student's TVE Qualification."); return;
     }
-    if (isGrade11&&!form.grade11_track){
+    // ALS (old curriculum) does not use the regular Academic/TechPro/TVL
+    // track structure — it has its own Learning Strands, so the track
+    // dropdowns don't apply and aren't required for an ALS learner.
+    if (!isAls&&isGrade11&&!form.grade11_track){
       alert("Please select the student's Grade 11 Track (Academic or TechPro)."); return;
     }
-    if (needsTechProChoice&&!form.grade11_techpro_choice){
+    if (!isAls&&needsTechProChoice&&!form.grade11_techpro_choice){
       alert("Please select the TechPro specialization (Bakery Operations or Organic Agriculture Production)."); return;
     }
-    if (isGrade12&&!form.grade12_track){
+    if (!isAls&&isGrade12&&!form.grade12_track){
       alert("Please select the student's Grade 12 Track (TVL-AFA or TVL-HE)."); return;
     }
     // Build a single shs_track label for storage, e.g.
     // "TechPro - Organic Agriculture Production" or "Academic" or "TVL-AFA"
     let shsTrack=null;
-    if (isGrade11) {
+    if (!isAls&&isGrade11) {
       shsTrack=form.grade11_track==="TechPro"
         ?`TechPro - ${form.grade11_techpro_choice}`
         :"Academic";
-    } else if (isGrade12) {
+    } else if (!isAls&&isGrade12) {
       shsTrack=form.grade12_track;
     }
     onAdd({
       ...form,
       tve_qualification:needsTve?form.tve_qualification:null,
       shs_track:shsTrack,
+      curriculum:(isGrade11||isGrade12)?form.curriculum:"regular",
     });
     resetForm();
   };
@@ -847,7 +854,16 @@ const AddStudentForm = ({ sections, gradeFilter, onAdd, loading, qualifications 
             {tveOptions.map(q=><option key={q} value={q}>{q}</option>)}
           </select>
         )}
-        {isGrade11&&(
+        {(isGrade11||isGrade12)&&(
+          <select value={form.curriculum}
+            onChange={e=>setForm(p=>({...p,curriculum:e.target.value,
+              grade11_track:"",grade11_techpro_choice:"",grade12_track:""}))}
+            style={{gridColumn:"1 / -1"}}>
+            <option value="regular">Curriculum: Regular (standard DepEd K-12)</option>
+            <option value="als">Curriculum: ALS (Alternative Learning System)</option>
+          </select>
+        )}
+        {!isAls&&isGrade11&&(
           <>
             <select value={form.grade11_track}
               onChange={e=>setForm(p=>({...p,grade11_track:e.target.value,grade11_techpro_choice:""}))}
@@ -864,7 +880,7 @@ const AddStudentForm = ({ sections, gradeFilter, onAdd, loading, qualifications 
             )}
           </>
         )}
-        {isGrade12&&(
+        {!isAls&&isGrade12&&(
           <select value={form.grade12_track}
             onChange={e=>setForm(p=>({...p,grade12_track:e.target.value}))}
             style={{gridColumn:"1 / -1"}}>
@@ -889,6 +905,7 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
     grade_level:student.grade_level, section_id:student.section_id||"",
     tve_qualification:student.tve_qualification||"", shs_track:student.shs_track||"",
     enrollment_status:student.enrollment_status||"Active", status_date:student.status_date||"",
+    curriculum:student.curriculum||"regular",
   });
   const [saving,setSaving]=useState(false);
   const gradeLevel=parseInt(form.grade_level);
@@ -910,6 +927,7 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
       section_id:form.section_id||null,
       tve_qualification:needsTve?form.tve_qualification:null,
       shs_track:(isGrade11||isGrade12)?(form.shs_track||null):null,
+      curriculum:(isGrade11||isGrade12)?form.curriculum:"regular",
       grade_level:canChangeGrade?gradeLevel:undefined,
       enrollment_status:form.enrollment_status,
       status_date:form.enrollment_status==="Active"?null:form.status_date,
@@ -966,8 +984,15 @@ const EditStudentModal = ({ student, sections, qualifications=[], canChangeGrade
             </select>
           )}
           {(isGrade11||isGrade12)&&(
-            <input placeholder="SHS Track" value={form.shs_track}
-              onChange={e=>setForm(p=>({...p,shs_track:e.target.value}))}/>
+            <>
+              <select value={form.curriculum}
+                onChange={e=>setForm(p=>({...p,curriculum:e.target.value}))}>
+                <option value="regular">Curriculum: Regular (standard DepEd K-12)</option>
+                <option value="als">Curriculum: ALS (Alternative Learning System)</option>
+              </select>
+              <input placeholder="SHS Track" value={form.shs_track}
+                onChange={e=>setForm(p=>({...p,shs_track:e.target.value}))}/>
+            </>
           )}
           <input placeholder="Address" value={form.address}
             onChange={e=>setForm(p=>({...p,address:e.target.value}))}/>
@@ -1081,9 +1106,11 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
   const [form,setForm]=useState({
     name:subject.name||"", grade_level:subject.grade_level,
     tve_qualification:subject.tve_qualification||"",
+    term:subject.term?String(subject.term):"", curriculum:subject.curriculum||"regular",
   });
   const [saving,setSaving]=useState(false);
   const isTveGrade=parseInt(form.grade_level)>=8&&parseInt(form.grade_level)<=10;
+  const isShsGrade=parseInt(form.grade_level)===11||parseInt(form.grade_level)===12;
 
   const submit=async()=>{
     if (!form.name.trim()){alert("Subject name is required.");return;}
@@ -1097,6 +1124,10 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
       // the tag — this is the only place in the app that can undo a subject
       // getting stuck pointing at the wrong qualification's roster.
       tve_qualification:isTveGrade&&form.tve_qualification?form.tve_qualification:null,
+      // Term and curriculum only mean anything for Grades 11-12 — moving a
+      // subject out of SHS clears both, same reasoning as TVE above.
+      term:isShsGrade&&form.term?parseInt(form.term):null,
+      curriculum:isShsGrade&&form.curriculum==="als"?"als":"regular",
     });
     setSaving(false);
   };
@@ -1134,6 +1165,34 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
                 (e.g. "TVE-AgriCrop Production"). Regular subjects like Science or
                 Mathematics should stay set to "None" so every student in the section
                 shows up, regardless of their qualification track.
+              </div>
+            </div>
+          )}
+          {isShsGrade&&(
+            <div>
+              <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>
+                TERM SCOPE (SHS ONLY)
+              </label>
+              <select value={form.term}
+                onChange={e=>setForm(p=>({...p,term:e.target.value}))}>
+                <option value="">-- All terms (default) --</option>
+                <option value="1">Term 1 only</option>
+                <option value="2">Term 2 only</option>
+                <option value="3">Term 3 only</option>
+              </select>
+              <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",margin:"8px 0 4px"}}>
+                CURRICULUM
+              </label>
+              <select value={form.curriculum}
+                onChange={e=>setForm(p=>({...p,curriculum:e.target.value}))}>
+                <option value="regular">Regular (standard DepEd K-12)</option>
+                <option value="als">ALS (Alternative Learning System)</option>
+              </select>
+              <div style={{fontSize:10,color:T.textMuted,marginTop:4}}>
+                Term scope: leave as "All terms" for a subject that runs the whole year.
+                Set to one term for a subject that only exists in that term.
+                Curriculum: ALS subjects are only seen by learners marked ALS, and vice versa
+                for Regular — the two subject lists never mix even within the same grade level.
               </div>
             </div>
           )}
@@ -2942,16 +3001,30 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   };
 
   useEffect(()=>{
+    if (!selSubject) return;
+    const sub=subjects.find(s=>s.id===selSubject);
+    // If the previously-selected subject is term-scoped and doesn't run in
+    // the term the teacher just switched to, drop the stale selection rather
+    // than silently keeping it picked while it's hidden from the dropdown.
+    if (sub&&sub.term&&sub.term!==selTerm) { setSelSubject(""); setSelSection(""); }
+  },[selTerm]);
+
+  useEffect(()=>{
     if (!selSubject||!selSection) { setStudents([]); return; }
     const sub=subjects.find(s=>s.id===selSubject);
     if (!sub) return;
     (async()=>{
       // Scope the roster to one section at a time (per-section encoding), and
       // if this subject is tagged with a TVE qualification, only show students
-      // who are assigned that exact qualification within that section.
+      // who are assigned that exact qualification within that section. For
+      // Grade 11-12, a section can hold both Regular and ALS learners sharing
+      // the same grade/section — an ALS subject must only ever pull ALS
+      // students (and a Regular subject only Regular students), the same way
+      // a TVE-qualification-tagged subject only pulls that one qualification.
       let stuQuery=supabase.from("profiles").select("*")
         .eq("role","student").eq("grade_level",sub.grade_level).eq("section_id",selSection);
       if (sub.tve_qualification) stuQuery=stuQuery.eq("tve_qualification",sub.tve_qualification);
+      stuQuery=stuQuery.eq("curriculum",sub.curriculum||"regular");
       const [stuR,gR]=await Promise.all([
         stuQuery.order("name"),
         supabase.from("grades").select("*").eq("subject_id",selSubject).eq("term",selTerm),
@@ -3091,7 +3164,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     if (gradeLevel>=8&&gradeLevel<=10&&!form.tve_qualification){
       notify("❌ TVE Qualification is required for Grades 8-10."); return;
     }
-    if ((gradeLevel===11||gradeLevel===12)&&!form.shs_track){
+    if ((gradeLevel===11||gradeLevel===12)&&form.curriculum!=="als"&&!form.shs_track){
       notify("❌ Track is required for Grades 11-12."); return;
     }
     setAddingStudent(true);
@@ -3103,6 +3176,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         address:form.address,
         tve_qualification:(gradeLevel>=8&&gradeLevel<=10)?form.tve_qualification:null,
         shs_track:(gradeLevel===11||gradeLevel===12)?form.shs_track:null,
+        curriculum:(gradeLevel===11||gradeLevel===12)?(form.curriculum||"regular"):"regular",
       });
       if (result.error){notify("❌ "+result.error);return;}
       notify("✅ Student added!");
@@ -3314,11 +3388,20 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                       setSelSection(scoped.length===1?scoped[0]:(!scoped.length ? (sub?.section_id||"") : ""));
                     }}>
                     <option value="">-- Select --</option>
-                    {subjects.filter(s=>!isMapehParent(s,subjects)).map(s=>{
+                    {subjects
+                      .filter(s=>!isMapehParent(s,subjects))
+                      // An SHS subject tagged with a specific term (subjects.term)
+                      // only ever runs in that term — hide it from every other
+                      // term's dropdown so a teacher can't accidentally encode a
+                      // grade against it outside the term it actually exists in.
+                      // A subject with no term set (JHS/TVE, or a year-round SHS
+                      // subject) always shows, exactly as before.
+                      .filter(s=>!s.term||s.term===selTerm)
+                      .map(s=>{
                       const assigned=subjectAssignments.filter(a=>a.subject_id===s.id);
                       const secNames=assigned.map(a=>sections.find(sc=>sc.id===a.section_id)?.name).filter(Boolean);
                       return <option key={s.id} value={s.id}>
-                        {studentDisplay(s)} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}{secNames.length?` · ${secNames.join(", ")}`:(s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:"")})
+                        {studentDisplay(s)} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""}{s.term?` · Term ${s.term} only`:""}{s.curriculum==="als"?" · ALS":""}{secNames.length?` · ${secNames.join(", ")}`:(s.section_id?` · Sec. ${sections.find(sc=>sc.id===s.section_id)?.name||"?"}`:"")})
                       </option>;
                     })}
                   </select>
@@ -3960,7 +4043,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [applyingPass,setApplyingPass]=useState(false);
 
   const [nTeacher,setNTeacher]=useState({name:"",email:"",password:""});
-  const [nSubject,setNSubject]=useState({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:""});
+  const [nSubject,setNSubject]=useState({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular"});
   const [nGrade,setNGrade]=useState({student_id:"",subject_id:"",term:1,grade:""});
   const [nSection,setNSection]=useState({name:"",grade_level:7,adviser_id:""});
 
@@ -4050,7 +4133,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
     if (gradeLevel>=8&&gradeLevel<=10&&!form.tve_qualification){
       notify("❌ TVE Qualification is required for Grades 8-10."); return;
     }
-    if ((gradeLevel===11||gradeLevel===12)&&!form.shs_track){
+    if ((gradeLevel===11||gradeLevel===12)&&form.curriculum!=="als"&&!form.shs_track){
       notify("❌ Track is required for Grades 11-12."); return;
     }
     setAddingStudent(true);
@@ -4062,6 +4145,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
         birthday:form.birthday||null,address:form.address,
         tve_qualification:(gradeLevel>=8&&gradeLevel<=10)?form.tve_qualification:null,
         shs_track:(gradeLevel===11||gradeLevel===12)?form.shs_track:null,
+        curriculum:(gradeLevel===11||gradeLevel===12)?(form.curriculum||"regular"):"regular",
       });
       if (result.error){notify("❌ "+result.error);return;}
       notify("✅ Student added!");
@@ -4167,6 +4251,8 @@ const AdminDashboard = ({ profile, onLogout }) => {
     const {data:inserted,error}=await supabase.from("subjects").insert({
       name:nSubject.name,grade_level:parseInt(nSubject.grade_level),teacher_id:nSubject.teacher_id||null,
       tve_qualification:nSubject.tve_qualification||null,section_id:nSubject.section_id||null,
+      term:nSubject.term?parseInt(nSubject.term):null,
+      curriculum:nSubject.curriculum==="als"?"als":"regular",
     }).select().single();
     if (error){notify("❌ "+error.message);return;}
     if (inserted && nSubject.teacher_id) {
@@ -4175,7 +4261,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       });
       if (assignmentError){notify("⚠️ Subject created, but teacher assignment failed: "+assignmentError.message);}
     }
-    setNSubject({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:""});
+    setNSubject({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular"});
     // MAPEH is never graded directly — auto-create its two components so
     // there's immediately something for teachers to encode grades against.
     if (inserted&&inserted.name.trim().toUpperCase()==="MAPEH") {
@@ -4283,6 +4369,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       const compUpdates={};
       if (updates.grade_level!==undefined) compUpdates.grade_level=updates.grade_level;
       if (updates.tve_qualification!==undefined) compUpdates.tve_qualification=updates.tve_qualification;
+      if (updates.curriculum!==undefined) compUpdates.curriculum=updates.curriculum;
       if (Object.keys(compUpdates).length) {
         await supabase.from("subjects").update(compUpdates).in("id",comps.map(c=>c.id));
       }
@@ -4972,6 +5059,22 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     <option value="">-- TVE Qualification (opt) --</option>
                     {qualifications.map(q=><option key={q.name} value={q.name}>{q.name}</option>)}
                   </select>
+                )}
+                {(parseInt(nSubject.grade_level)===11||parseInt(nSubject.grade_level)===12)&&(
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <select value={nSubject.term}
+                      onChange={e=>setNSubject(p=>({...p,term:e.target.value}))}>
+                      <option value="">-- All terms (default) --</option>
+                      <option value="1">Term 1 only</option>
+                      <option value="2">Term 2 only</option>
+                      <option value="3">Term 3 only</option>
+                    </select>
+                    <select value={nSubject.curriculum}
+                      onChange={e=>setNSubject(p=>({...p,curriculum:e.target.value}))}>
+                      <option value="regular">Curriculum: Regular</option>
+                      <option value="als">Curriculum: ALS</option>
+                    </select>
+                  </div>
                 )}
                 <select value={nSubject.teacher_id}
                   onChange={e=>setNSubject(p=>({...p,teacher_id:e.target.value}))}>
