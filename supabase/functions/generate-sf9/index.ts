@@ -60,14 +60,36 @@ const MONTH_YEAR_OFFSET: Record<string, number> = {
   Jan: 1, Feb: 1, Mar: 1, Apr: 1,
 };
 
-function getSubjectOrder(gradeLevel: number | null, tveQualification: string | null): string[] {
+function getSubjectOrder(
+  gradeLevel: number | null,
+  tveQualification: string | null,
+  dbSubjects: any[] = [],
+): string[] {
   const g = gradeLevel;
   const tveLabel = tveQualification ? `TVE (${tveQualification})` : "TVE";
   const subjects = [
     "Filipino", "English", "Mathematics", "Science",
     "Araling Panlipunan", "Values Education", tveLabel,
-    "MAPEH", "    Music and Arts", "    PE and Health",
+    "MAPEH",
   ];
+
+  // Do not hard-code MAPEH component names. Resolve the actual child subjects
+  // linked to the MAPEH parent so SF9 follows the database configuration
+  // (including legacy/custom component names) and never silently drops grades.
+  const mapeh = dbSubjects.find(
+    (s: any) => String(s.name || "").trim().toUpperCase() === "MAPEH" && !s.parent_subject_id
+  );
+  if (mapeh) {
+    const components = dbSubjects
+      .filter((s: any) => s.parent_subject_id === mapeh.id)
+      .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+    for (const c of components) subjects.push(`    ${c.name}`);
+  } else {
+    // Backward-compatible fallback for older databases where MAPEH
+    // components have not yet been linked through parent_subject_id.
+    subjects.push("    Music and Arts", "    PE and Health");
+  }
+
   if (g === 7 || g === 8) subjects.push("Technical Drawing");
   if (g === 9 || g === 10) subjects.push("Entrepreneurship");
   if (g === 7 || g === 8 || g === 9) subjects.push("ICF");
@@ -185,6 +207,11 @@ class Drawer {
     }
     return size;
   }
+
+  centeredFit(cx: number, y: number, text: string, font: PDFFont, startSize: number, maxWidth: number, minSize = 5.5) {
+    const size = this.shrinkToFit(text, font, startSize, maxWidth, minSize);
+    this.centered(cx, y, text, font, size);
+  }
 }
 
 // ---------- MAIN HANDLER ----------
@@ -282,7 +309,7 @@ serve(async (req: Request) => {
     // combined into one SF9 calendar-month value.
     const schoolYearStart = Number(String(school_year||"2026").slice(0,4));
     const monthDefs = MONTHS.map((label,i)=>{
-      const m=i<7 ? i+6 : i-5;
+      const m=i<7 ? i+6 : i-6;
       const y=m>=6 ? schoolYearStart : schoolYearStart+1;
       const terms = m===9 ? [1,2] : [m>=6&&m<=8 ? 1 : m>=10&&m<=12 ? 2 : 3];
       return {label,m,y,terms};
@@ -307,9 +334,18 @@ serve(async (req: Request) => {
       const present=parts.reduce((n,r)=>n+(Number(r.total_present)||0),0);
       const encoded=parts.some(r=>!!r.encoded);
       const calendarError=errs.length>0&&parts.length===0;
-      return {label:def.label,present:encoded&&!calendarError?Math.min(Math.max(present,0),total):0,total:calendarError?0:total,encoded:encoded&&!calendarError,calendarError};
+      return {
+        label: def.label,
+        // An unencoded month is not an absence. Keep the valid calendar
+        // denominator visible, but leave Present/Absent blank until attendance
+        // is actually encoded for the learner.
+        present: encoded && !calendarError ? Math.min(Math.max(present, 0), total) : null,
+        total: calendarError ? 0 : total,
+        encoded: encoded && !calendarError,
+        calendarError,
+      };
     }));
-    const attByMonth: Record<string, { present:number; total:number; encoded:boolean }> = {};
+    const attByMonth: Record<string, { present:number|null; total:number; encoded:boolean; calendarError:boolean }> = {};
     attResults.forEach(r=>{attByMonth[r.label]=r;});
     const calendarMismatchMonths = attResults.filter(r=>r.calendarError).map(r=>r.label);
 
@@ -440,7 +476,7 @@ serve(async (req: Request) => {
       const isSHS = student.grade_level === 11 || student.grade_level === 12;
       const subjectsOrder = isSHS
         ? getSubjectOrderSHS(subjects, student)
-        : getSubjectOrder(student.grade_level, student.tve_qualification);
+        : getSubjectOrder(student.grade_level, student.tve_qualification, subjects);
       const nRows = subjectsOrder.length + 1;
       const TARGET_ROWS = 13;
       const TARGET_ROW_H = 4.0 * MM;
@@ -458,7 +494,7 @@ serve(async (req: Request) => {
 
       const yBottom = yTop - tableH;
 
-      d.rect(xSubject, yBottom, xEnd - xSubject, tableH, 0.9);
+      d.rect(xSubject, yBottom, xEnd - xSubject, tableH, 1.1);
       const genAvgRowTop = yBottom + rowH;
       for (const x of [xT1, xT2, xT3]) d.line(x, genAvgRowTop, x, yTop, 0.6);
       d.line(xFinal, yBottom, xFinal, yTop, 0.6);
@@ -487,11 +523,10 @@ serve(async (req: Request) => {
         const label = subj.trim();
         if (label) {
           const font = isSub ? fIt : fReg;
-          let size = isSub ? 7.5 : 7.8;
-          const indent = isSub ? 3.2 * MM : 1.6 * MM;
-          const availW = colSubjectW - indent - 1 * MM;
-          size = d.shrinkToFit(label, font, size, availW);
-          d.text(xSubject + indent, yRowBot + 2 * MM, label, font, size);
+          const availW = colSubjectW - 2 * MM;
+          // Center every learning-area label within its table cell. Components
+          // remain visually distinct through italics rather than indentation.
+          d.centeredFit((xSubject + xT1) / 2, yRowBot + 2 * MM, label, font, isSub ? 7.5 : 7.8, availW, 5.6);
 
           // Use the base subject name for the grade lookup (matches
           // subjects.name in the database), not the display label, since
@@ -503,21 +538,42 @@ serve(async (req: Request) => {
           // in SHS), its value is always the average of whichever
           // components have a grade for that term — never a directly
           // encoded grade of its own.
-          const parentSubj = subjects.find((s: any) => s.name === label && !s.parent_subject_id);
+          const parentSubj = subjects.find((s: any) =>
+            s.name === label && !s.parent_subject_id
+          );
           const childSubjs = parentSubj
             ? subjects.filter((s: any) => s.parent_subject_id === parentSubj.id)
             : [];
+
+          // Component rows (including MAPEH children) are looked up by their
+          // actual subject ID. The MAPEH parent row is the only computed row.
+          // This avoids losing grades when a component is named differently
+          // from the historical "Music and Arts" / "PE and Health" labels.
           let g: Record<number, number> = {};
           if (childSubjs.length > 0) {
             for (let t = 1; t <= 3; t++) {
               const vals = childSubjs
                 .map((c: any) => gradeMap[c.id]?.[t])
                 .filter((v: any) => v !== undefined && v !== null) as number[];
-              if (vals.length) g[t] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+              if (vals.length) {
+                // MAPEH is displayed as the whole-number average of its
+                // components (DepEd convention), not rounded to 2 decimals.
+                g[t] = Math.round(
+                  vals.reduce((a, b) => a + b, 0) / vals.length
+                );
+              }
             }
           } else {
-            const directSubj = subjects.find((s: any) => s.name === lookupName && !s.parent_subject_id);
-            g = directSubj ? (gradeMap[directSubj.id] || {}) : {};
+            const directSubj = subjects.find((s: any) =>
+              s.name === lookupName && !s.parent_subject_id
+            );
+            // A displayed indented MAPEH component is itself a child subject,
+            // so find it by its exact name even though it is not a parent.
+            const componentSubj = subjects.find((s: any) =>
+              s.name === label && !!s.parent_subject_id
+            );
+            const actualSubj = componentSubj || directSubj;
+            g = actualSubj ? (gradeMap[actualSubj.id] || {}) : {};
           }
 
           let final: number | null = null;
@@ -563,14 +619,14 @@ serve(async (req: Request) => {
       const col1 = leftX0 + 6 * MM;
       const col2 = col1 + 27 * MM;
       const col3 = col2 + 33 * MM;
-      d.text(col1, y, "Grading Scale", fBold, 7.8);
-      d.text(col2, y, "Description", fBold, 7.8);
-      d.text(col3, y, "Remarks", fBold, 7.8);
+      d.centered(col1 + 12 * MM, y, "Grading Scale", fBold, 7.8);
+      d.centered(col2 + 15 * MM, y, "Description", fBold, 7.8);
+      d.centered(col3 + 12 * MM, y, "Remarks", fBold, 7.8);
       y -= 3.8 * MM;
       for (const [scale, desc, remark] of DESCRIPTORS) {
-        d.text(col1, y, scale, fReg, 7.6);
-        d.text(col2, y, desc, fReg, 7.6);
-        d.text(col3, y, remark, fReg, 7.6);
+        d.centered(col1 + 12 * MM, y, scale, fReg, 7.6);
+        d.centered(col2 + 15 * MM, y, desc, fReg, 7.6);
+        d.centered(col3 + 12 * MM, y, remark, fReg, 7.6);
         y -= 3.6 * MM;
       }
     }
@@ -593,7 +649,7 @@ serve(async (req: Request) => {
       const tableH = headerH + rowH * 3;
       const yBottom = yTop - tableH;
 
-      d.rect(rightX0, yBottom, width, tableH, 0.9);
+      d.rect(rightX0, yBottom, width, tableH, 1.1);
       d.line(rightX0, yTop - headerH, rightX0 + width, yTop - headerH, 0.6);
 
       let x = rightX0 + labelW;
@@ -634,9 +690,16 @@ serve(async (req: Request) => {
           const att = attByMonth[m];
           let val = "";
           if (att && !att.calendarError) {
-            if (kind === "total") val = String(att.total);
-            else if (kind === "present") val = String(att.present);
-            else val = String(Math.max(att.total - att.present, 0));
+            // Class days come from the canonical school calendar even when
+            // the learner's daily grid has not yet been encoded. Present and
+            // absent must remain blank in that case — showing 0 present and
+            // all days absent falsely reports a learner's attendance.
+            if (kind === "total") {
+              val = String(att.total);
+            } else if (att.encoded) {
+              if (kind === "present") val = String(att.present);
+              else val = String(Math.max(att.total - att.present, 0));
+            }
           }
           if (val) {
             d.centered(xm2 + monthW / 2, yRowBot + 2.5 * MM, val, fReg, 6.8);

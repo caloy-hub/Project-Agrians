@@ -21,6 +21,20 @@ import "./App.css";
 
 const GRADE_LEVELS = [7, 8, 9, 10, 11, 12];
 
+// ⚠️ SY 2026–2027 ONLY. The startDay/endDay values below are this app's
+// *local, offline compatibility fallback* for when the canonical
+// `agrians_school_days()` RPC (supabase/migrations/20260905_attendance_
+// summary_and_term_bounds_fix.sql) is unreachable — see attendanceEngine's
+// module comment. The canonical/authoritative calculation used by SF2, SF4,
+// SF9, and the primary Student Dashboard path now reads its term boundaries
+// from the `school_term_day_bounds` table, which an admin can update every
+// school year without a code change. This local array was NOT moved to that
+// table (doing so would require every screen below to fetch and merge
+// per-year overrides, which is a larger, separate change) — it must be
+// updated by hand for SY 2027–2028 and beyond, or the offline fallback path
+// will silently miscalculate school days for any month/term outside what's
+// listed here. Do not let this list go stale the way agrians_school_days()
+// previously did.
 const TERM_MONTHS = [
   { month:6,  year:2026, term:1, label:"June 2026",           startDay:8 },
   { month:7,  year:2026, term:1, label:"July 2026" },
@@ -273,7 +287,11 @@ const gradeForTerm = (subject, term, allSubjects, gradesArr) => {
     const vals = comps
       .map(c => gradesArr.find(g => g.subject_id === c.id && g.term === term)?.grade)
       .filter(v => v !== undefined && v !== null);
-    return vals.length ? Math.round((vals.reduce((a,b)=>a+b,0) / vals.length) * 100) / 100 : null;
+    // MAPEH is displayed as a whole-number average of its components (DepEd
+    // convention) — must match the rounding used in generate-sf9/index.ts so
+    // the Student Dashboard, Teacher Review, Admin Statistics and the
+    // official SF9 PDF never disagree on the same learner's MAPEH grade.
+    return vals.length ? Math.round(vals.reduce((a,b)=>a+b,0) / vals.length) : null;
   }
   return gradesArr.find(g => g.subject_id === subject.id && g.term === term)?.grade ?? null;
 };
@@ -1371,10 +1389,18 @@ const getBirthdayMessage = birthday => {
     : null;
 };
 
-const buildDasigAchievements = ({ average, attendancePct, termAverage, previousAverage }) => {
+// `statusAverage` must be the same "current performance" value used to drive
+// the companion's headline (attendanceEngine.learnerStatus) — previously this
+// checked the cumulative `average` for Honor but fell back to `termAverage`
+// for Almost Honor, so a learner whose latest term already reached 90+ (and
+// whose companion headline already said "Congratulations, Honor Agrian!")
+// could simultaneously see an "Almost Honor" badge because their older,
+// lower cumulative average hadn't crossed 90 yet. Using one resolved value
+// for both keeps the headline and the badges from disagreeing.
+const buildDasigAchievements = ({ statusAverage, attendancePct, termAverage, previousAverage }) => {
   const items=[];
-  if (average!=null && average>=90) items.push({icon:"🏆",title:"Honor Agrian",text:"Your current academic average is at or above 90."});
-  else if (termAverage!=null && termAverage>=88) items.push({icon:"🌟",title:"Almost Honor",text:"You are within reach of the 90 honor benchmark."});
+  if (statusAverage!=null && statusAverage>=90) items.push({icon:"🏆",title:"Honor Agrian",text:"Your current academic average is at or above 90."});
+  else if (statusAverage!=null && statusAverage>=88) items.push({icon:"🌟",title:"Almost Honor",text:"You are within reach of the 90 honor benchmark."});
   if (attendancePct!=null && attendancePct>=95) items.push({icon:"🗓️",title:"Attendance Hero",text:"95%+ attendance shows strong consistency."});
   if (previousAverage!=null && termAverage!=null && termAverage>previousAverage) items.push({icon:"📈",title:"Growing Agrian",text:`Your latest term is up ${Math.round((termAverage-previousAverage)*10)/10} points.`});
   if (!items.length) items.push({icon:"🌱",title:"Keep Planting",text:"Every completed activity and every school day moves you forward."});
@@ -1513,7 +1539,7 @@ const AgrianCompanion = ({ profile, average, termAverage, previousAverage=null, 
     setCelebrate(false);
   },[status.key]);
 
-  const achievements=buildDasigAchievements({average,attendancePct,termAverage,previousAverage});
+  const achievements=buildDasigAchievements({statusAverage,attendancePct,termAverage,previousAverage});
   const honorGap=statusAverage==null?10:Math.max(0,90-statusAverage);
   const attendanceNote=attendancePct==null
     ?"Let's build a strong attendance habit."
@@ -1990,7 +2016,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
             </Card>
             <div className="dasig-corner-grid">
               <Card><div className="dasig-panel-title">🏆 Your Growth Badges</div>
-                {buildDasigAchievements({average:overallAvg,attendancePct:latestTermIndex>=0?getTermAttendance(latestTermIndex+1).pct:null,termAverage,previousAverage}).map(a=>(
+                {buildDasigAchievements({statusAverage:termAverage??overallAvg,attendancePct:latestTermIndex>=0?getTermAttendance(latestTermIndex+1).pct:null,termAverage,previousAverage}).map(a=>(
                   <div className="dasig-badge-row" key={a.title}><span>{a.icon}</span><div><b>{a.title}</b><small>{a.text}</small></div></div>
                 ))}
               </Card>
@@ -2728,6 +2754,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   const [selSection,setSelSection]=useState("");
   const [localGrades,setLocalGrades]=useState({});
   const [dbGrades,setDbGrades]=useState([]);
+  const [calendar,setCalendar]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [selAttMonth,setSelAttMonth]=useState(null);
   const [dailyAtt,setDailyAtt]=useState([]); // daily_attendance rows for the selected month
@@ -2753,12 +2780,13 @@ const TeacherDashboard = ({ profile, onLogout }) => {
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
-    const [sR,asR,aR,secR,qR,holR]=await Promise.all([
+    const [sR,asR,aR,secR,qR,calR,holR]=await Promise.all([
       supabase.from("subjects").select("*").eq("teacher_id",profile.id),
       supabase.from("subject_assignments").select("id,subject_id,teacher_id,section_id").eq("teacher_id",profile.id),
       supabase.from("appointments").select("*").eq("teacher_id",profile.id),
       supabase.from("sections").select("*").eq("adviser_id",profile.id).order("name").limit(1),
       supabase.from("tve_qualifications").select("*").order("name"),
+      supabase.from("school_calendar").select("*").order("year").order("month"),
       supabase.from("school_holidays").select("*").order("date"),
     ]);
     const assignmentRows=asR.data||[];
@@ -2778,6 +2806,7 @@ const TeacherDashboard = ({ profile, onLogout }) => {
     } else if (sR.data) setSubjects(sR.data);
     if (aR.data) setAppointments(aR.data);
     if (qR.data) setQualifications(qR.data.map(q=>q.name));
+    if (calR.data) setCalendar(calR.data);
     if (holR.data) setHolidays(holR.data);
     const adviserSection=Array.isArray(secR.data)?(secR.data[0]||null):secR.data;
     if (adviserSection) {
@@ -3217,13 +3246,21 @@ const TeacherDashboard = ({ profile, onLogout }) => {
         notify("❌ "+(err.error||"Failed to generate SF2"));
         return;
       }
+      const warningHeader=res.headers.get("X-Encoding-Warning");
+      const genderWarningHeader=res.headers.get("X-Gender-Data-Warning");
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url; a.download=`SF2_${mySection.name.replace(/\s+/g,"_")}_${sf2Month.label.replace(/\s+/g,"_")}.pdf`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      notify("✅ SF2 downloaded!");
+      const warnings=[warningHeader,genderWarningHeader].filter(Boolean).map(decodeURIComponent);
+      if (warnings.length) {
+        setToast("⚠️ Downloaded, but "+warnings.join(" | "));
+        setTimeout(()=>setToast(""),8000);
+      } else {
+        notify("✅ SF2 downloaded!");
+      }
     } catch (e) {
       notify("❌ "+String(e.message||e));
     }
@@ -4318,15 +4355,17 @@ const AdminDashboard = ({ profile, onLogout }) => {
         return;
       }
       const warningHeader=res.headers.get("X-Encoding-Warning");
+      const genderWarningHeader=res.headers.get("X-Gender-Data-Warning");
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url; a.download=filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      if (warningHeader) {
+      const warnings=[warningHeader,genderWarningHeader].filter(Boolean).map(decodeURIComponent);
+      if (warnings.length) {
         // Longer-lived toast — this needs more than the default 3s to actually read.
-        setToast("⚠️ Downloaded, but "+decodeURIComponent(warningHeader));
+        setToast("⚠️ Downloaded, but "+warnings.join(" | "));
         setTimeout(()=>setToast(""),8000);
       } else {
         notify("✅ Downloaded!");

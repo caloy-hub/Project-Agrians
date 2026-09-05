@@ -38,7 +38,7 @@ import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from "https://esm.s
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Expose-Headers": "X-Encoding-Warning",
+  "Access-Control-Expose-Headers": "X-Encoding-Warning, X-Gender-Data-Warning",
 };
 
 const MM = 2.83465;
@@ -203,6 +203,18 @@ serve(async (req: Request) => {
     const presentByStudent = new Map<string, number>();
     const encodedByStudent = new Map<string, boolean>();
     const sectionIds = [...new Set((sectionsInScope||[]).map(s=>s.id))];
+
+    // The official SF4 template only has Male/Female columns — there is no
+    // third column to print an "Other" count in. Rather than silently drop
+    // these learners from every row (which previously made Total disagree
+    // with Male + Female on a DepEd-facing form), keep counting them in the
+    // Total column as before, but surface an explicit warning header so the
+    // admin knows Total can exceed Male + Female and can fix the underlying
+    // profile data (DepEd LIS requires every learner to have Male/Female set).
+    const unclassifiedGenderCount = (allStudents||[]).filter(
+      s => (s.enrollment_status==="Active"||s.enrollment_status==="Transferred In")
+        && s.gender!=="Male" && s.gender!=="Female"
+    ).length;
 
     // One canonical section summary per section. This avoids rebuilding the
     // attendance formula inside SF4 and guarantees SF4 uses the same totals as
@@ -529,6 +541,11 @@ serve(async (req: Request) => {
         "Content-Disposition": `attachment; filename="SF4_${level}_${MONTH_NAMES[month]}_${year}.pdf"`,
         ...(incompleteSections.length ? { "X-Encoding-Warning": encodeURIComponent(
           `${incompleteSections.length} section(s) not yet encoded — their ADA/% Attendance show as N/E: ${incompleteSections.join(", ")}`
+        ) } : {}),
+        ...(unclassifiedGenderCount > 0 ? { "X-Gender-Data-Warning": encodeURIComponent(
+          `${unclassifiedGenderCount} enrolled learner(s) do not have Male/Female set as their gender. `
+          + `They are included in the Total column but cannot appear in the Male/Female columns of this `
+          + `report, so Male + Female will be less than Total. Update their profile's gender field.`
         ) } : {}),
       },
     });

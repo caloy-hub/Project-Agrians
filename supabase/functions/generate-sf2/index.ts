@@ -122,7 +122,12 @@ serve(async (req: Request) => {
     const statusFor = (studentId:string, date:string) => gridByKey.get(`${studentId}|${date}`) || "present";
     const males = (students||[]).filter(s=>s.gender==="Male");
     const females = (students||[]).filter(s=>s.gender==="Female");
-    const ordered = [...males, ...females];
+    // Any learner whose gender is missing/blank/other than Male or Female
+    // must still appear on the official SF2 — previously they were dropped
+    // from `ordered` entirely and vanished from the printed report.
+    const others = (students||[]).filter(s=>s.gender!=="Male"&&s.gender!=="Female");
+    const ordered = [...males, ...females, ...others];
+    const genderLabel = (g:string|null|undefined) => g==="Male" ? "MALE" : g==="Female" ? "FEMALE" : "OTHER";
 
     const pdfDoc = await PDFDocument.create();
     const fReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -199,9 +204,9 @@ serve(async (req: Request) => {
       const maxRows = Math.max(1, Math.floor((tableTop-headerH-(MARGIN+6*MM))/rowH));
       let lastGender="";
       for (const s of pageStudents) {
-        const gender = s.gender==="Male" ? "MALE" : "FEMALE";
+        const gender = genderLabel(s.gender);
         if (gender!==lastGender) {
-          drawGenderHeader(gender, pageStudents.filter(x=>(x.gender==="Male"?"MALE":"FEMALE")===gender).length);
+          drawGenderHeader(gender, pageStudents.filter(x=>genderLabel(x.gender)===gender).length);
           lastGender=gender; used++;
         }
         drawStudentRow(s); used++;
@@ -256,7 +261,12 @@ serve(async (req: Request) => {
 
     d2.text(MARGIN, y2, "SUMMARY FOR THE MONTH", fBold, 10); y2 -= 6.5*MM;
     const sumRows: [string,string][] = [
-      ["Enrolment (Male / Female / Total)", `${males.length} / ${females.length} / ${enrolled}`],
+      [
+        others.length>0 ? "Enrolment (Male / Female / Other / Total)" : "Enrolment (Male / Female / Total)",
+        others.length>0
+          ? `${males.length} / ${females.length} / ${others.length} / ${enrolled}`
+          : `${males.length} / ${females.length} / ${enrolled}`
+      ],
       ["No. of School Days This Month", String(days.length)],
       ["Total Attendance for the Month (Learner-Days Present)", String(totalPresent)],
       ["Total Absences for the Month (Learner-Days Absent)", String(totalAbsent)],
