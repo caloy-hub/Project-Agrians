@@ -1107,10 +1107,12 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
     name:subject.name||"", grade_level:subject.grade_level,
     tve_qualification:subject.tve_qualification||"",
     term:subject.term?String(subject.term):"", curriculum:subject.curriculum||"regular",
+    shs_track:subject.shs_track||"",
   });
   const [saving,setSaving]=useState(false);
   const isTveGrade=parseInt(form.grade_level)>=8&&parseInt(form.grade_level)<=10;
   const isShsGrade=parseInt(form.grade_level)===11||parseInt(form.grade_level)===12;
+  const isAlsSubject=form.curriculum==="als";
 
   const submit=async()=>{
     if (!form.name.trim()){alert("Subject name is required.");return;}
@@ -1124,10 +1126,13 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
       // the tag — this is the only place in the app that can undo a subject
       // getting stuck pointing at the wrong qualification's roster.
       tve_qualification:isTveGrade&&form.tve_qualification?form.tve_qualification:null,
-      // Term and curriculum only mean anything for Grades 11-12 — moving a
-      // subject out of SHS clears both, same reasoning as TVE above.
+      // Term, curriculum, and track only mean anything for Grades 11-12 —
+      // moving a subject out of SHS clears all three, same reasoning as TVE
+      // above. Track also doesn't apply to ALS (no Academic/TechPro/TVL
+      // structure there), so it's cleared whenever curriculum is ALS too.
       term:isShsGrade&&form.term?parseInt(form.term):null,
       curriculum:isShsGrade&&form.curriculum==="als"?"als":"regular",
+      shs_track:isShsGrade&&!isAlsSubject&&form.shs_track?form.shs_track:null,
     });
     setSaving(false);
   };
@@ -1184,15 +1189,31 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
                 CURRICULUM
               </label>
               <select value={form.curriculum}
-                onChange={e=>setForm(p=>({...p,curriculum:e.target.value}))}>
+                onChange={e=>setForm(p=>({...p,curriculum:e.target.value,shs_track:""}))}>
                 <option value="regular">Regular (standard DepEd K-12)</option>
                 <option value="als">ALS (Alternative Learning System)</option>
               </select>
+              {!isAlsSubject&&(
+                <>
+                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",margin:"8px 0 4px"}}>
+                    TRACK SCOPE
+                  </label>
+                  <select value={form.shs_track}
+                    onChange={e=>setForm(p=>({...p,shs_track:e.target.value}))}>
+                    <option value="">-- All tracks (default) --</option>
+                    {(parseInt(form.grade_level)===11?GRADE11_TRACKS:GRADE12_TRACKS)
+                      .map(t=><option key={t} value={t}>{t} only</option>)}
+                  </select>
+                </>
+              )}
               <div style={{fontSize:10,color:T.textMuted,marginTop:4}}>
                 Term scope: leave as "All terms" for a subject that runs the whole year.
                 Set to one term for a subject that only exists in that term.
                 Curriculum: ALS subjects are only seen by learners marked ALS, and vice versa
                 for Regular — the two subject lists never mix even within the same grade level.
+                Track scope: leave as "All tracks" for a subject every learner in the grade
+                takes; set it to one track (e.g. "TechPro only") so it never shows up for
+                learners on a different track sharing the same section.
               </div>
             </div>
           )}
@@ -3021,10 +3042,17 @@ const TeacherDashboard = ({ profile, onLogout }) => {
       // the same grade/section — an ALS subject must only ever pull ALS
       // students (and a Regular subject only Regular students), the same way
       // a TVE-qualification-tagged subject only pulls that one qualification.
+      // A section can also mix tracks (Academic/TechPro, or TVL-AFA/TVL-HE) —
+      // a track-scoped subject must only pull students on that same track.
+      // profiles.shs_track stores the full label including any
+      // sub-specialization ("TechPro - Bakery Operations"), while a
+      // subject's own scope is the coarser tag ("TechPro"), so this matches
+      // by prefix (case-insensitive) rather than exact equality.
       let stuQuery=supabase.from("profiles").select("*")
         .eq("role","student").eq("grade_level",sub.grade_level).eq("section_id",selSection);
       if (sub.tve_qualification) stuQuery=stuQuery.eq("tve_qualification",sub.tve_qualification);
       stuQuery=stuQuery.eq("curriculum",sub.curriculum||"regular");
+      if (sub.shs_track) stuQuery=stuQuery.ilike("shs_track",`${sub.shs_track}%`);
       const [stuR,gR]=await Promise.all([
         stuQuery.order("name"),
         supabase.from("grades").select("*").eq("subject_id",selSubject).eq("term",selTerm),
@@ -4043,7 +4071,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [applyingPass,setApplyingPass]=useState(false);
 
   const [nTeacher,setNTeacher]=useState({name:"",email:"",password:""});
-  const [nSubject,setNSubject]=useState({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular"});
+  const [nSubject,setNSubject]=useState({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular",shs_track:""});
   const [nGrade,setNGrade]=useState({student_id:"",subject_id:"",term:1,grade:""});
   const [nSection,setNSection]=useState({name:"",grade_level:7,adviser_id:""});
 
@@ -4253,6 +4281,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       tve_qualification:nSubject.tve_qualification||null,section_id:nSubject.section_id||null,
       term:nSubject.term?parseInt(nSubject.term):null,
       curriculum:nSubject.curriculum==="als"?"als":"regular",
+      shs_track:nSubject.shs_track||null,
     }).select().single();
     if (error){notify("❌ "+error.message);return;}
     if (inserted && nSubject.teacher_id) {
@@ -4261,7 +4290,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       });
       if (assignmentError){notify("⚠️ Subject created, but teacher assignment failed: "+assignmentError.message);}
     }
-    setNSubject({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular"});
+    setNSubject({name:"",grade_level:7,teacher_id:"",tve_qualification:"",section_id:"",term:"",curriculum:"regular",shs_track:""});
     // MAPEH is never graded directly — auto-create its two components so
     // there's immediately something for teachers to encode grades against.
     if (inserted&&inserted.name.trim().toUpperCase()==="MAPEH") {
@@ -4370,6 +4399,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       if (updates.grade_level!==undefined) compUpdates.grade_level=updates.grade_level;
       if (updates.tve_qualification!==undefined) compUpdates.tve_qualification=updates.tve_qualification;
       if (updates.curriculum!==undefined) compUpdates.curriculum=updates.curriculum;
+      if (updates.shs_track!==undefined) compUpdates.shs_track=updates.shs_track;
       if (Object.keys(compUpdates).length) {
         await supabase.from("subjects").update(compUpdates).in("id",comps.map(c=>c.id));
       }
@@ -5070,10 +5100,18 @@ const AdminDashboard = ({ profile, onLogout }) => {
                       <option value="3">Term 3 only</option>
                     </select>
                     <select value={nSubject.curriculum}
-                      onChange={e=>setNSubject(p=>({...p,curriculum:e.target.value}))}>
+                      onChange={e=>setNSubject(p=>({...p,curriculum:e.target.value,shs_track:""}))}>
                       <option value="regular">Curriculum: Regular</option>
                       <option value="als">Curriculum: ALS</option>
                     </select>
+                    {nSubject.curriculum!=="als"&&(
+                      <select value={nSubject.shs_track} style={{gridColumn:"1 / -1"}}
+                        onChange={e=>setNSubject(p=>({...p,shs_track:e.target.value}))}>
+                        <option value="">-- All tracks (default) --</option>
+                        {(parseInt(nSubject.grade_level)===11?GRADE11_TRACKS:GRADE12_TRACKS)
+                          .map(t=><option key={t} value={t}>{t} only</option>)}
+                      </select>
+                    )}
                   </div>
                 )}
                 <select value={nSubject.teacher_id}
@@ -5103,18 +5141,34 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     {glSubs.map(sub=>{
                       const sec=sections.find(s=>s.id===sub.section_id);
                       const assignedCount=assignmentRowsFor(sub.id).length;
+                      const glSections=sections.filter(s=>s.grade_level===gl);
                       return (
                         <div key={sub.id} style={{display:"flex",justifyContent:"space-between",
-                          alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f0f0f0"}}>
+                          alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f0f0f0",gap:8,flexWrap:"wrap"}}>
                           <div>
                             <div style={{fontWeight:700,fontSize:12,color:T.text}}>{sub.name}</div>
                             <div style={{fontSize:10,color:T.textMuted}}>
                               {sec?sec.name:"All sections"}
                               {sub.tve_qualification?` · ${sub.tve_qualification}`:""}
+                              {sub.shs_track?` · ${sub.shs_track} only`:""}
+                              {sub.curriculum==="als"?" · ALS":""}
                               {" · "}{assignedCount} teacher{assignedCount===1?"":"s"} assigned
                             </div>
                           </div>
-                          <div style={{display:"flex",gap:4,flexShrink:0}}>
+                          <div style={{display:"flex",gap:4,flexShrink:0,alignItems:"center"}}>
+                            {glSections.length>1&&(
+                              <select value={sub.section_id||""} style={{fontSize:11,padding:"4px 6px"}}
+                                onChange={e=>{
+                                  const newSec=e.target.value;
+                                  const label=newSec?sections.find(s=>s.id===newSec)?.name:"All sections";
+                                  if (window.confirm(`Move "${sub.name}" to "${label}"? Existing grades stay attached to this subject — this only changes which section(s) see it.`)) {
+                                    reassignSubjectSection(sub.id,newSec);
+                                  }
+                                }}>
+                                <option value="">-- All sections --</option>
+                                {glSections.map(s=><option key={s.id} value={s.id}>{s.name} only</option>)}
+                              </select>
+                            )}
                             <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
                               onClick={()=>setEditSubject(sub)}>✏️</Btn>
                             <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
