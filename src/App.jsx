@@ -2193,6 +2193,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
   const [calendar,setCalendar]=useState([]);
   const [holidays,setHolidays]=useState([]);
   const [section,setSection]=useState(null);
+  const [linkedApps,setLinkedApps]=useState([]);
   const [apptForm,setApptForm]=useState({teacherId:"",date:"",time:"",reason:""});
   const [apptMsg,setApptMsg]=useState("");
   const [loading,setLoading]=useState(true);
@@ -2201,7 +2202,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
 
   const fetchData=useCallback(async()=>{
     setLoading(true);
-    const [sR,gR,tR,aR,dailyR,calR,holR,secR]=await Promise.all([
+    const [sR,gR,tR,aR,dailyR,calR,holR,secR,laR]=await Promise.all([
       supabase.from("subjects").select("*").eq("grade_level",profile.grade_level),
       supabase.from("grades").select("*").eq("student_id",profile.id),
       supabase.from("profiles").select("id,name").eq("role","teacher"),
@@ -2212,6 +2213,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
       profile.section_id
         ?supabase.from("sections").select("*").eq("id",profile.section_id).single()
         :{data:null},
+      supabase.from("linked_apps").select("*").eq("is_active",true).order("sort_order").order("name"),
     ]);
     if (sR.data) {
       // A student should only see TVE subjects matching their own qualification.
@@ -2226,6 +2228,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
     if (calR.data) setCalendar(calR.data);
     if (holR.data) setHolidays(holR.data);
     if (secR.data) setSection(secR.data);
+    if (laR.data) setLinkedApps(laR.data);
     setLoading(false);
   },[profile.id,profile.grade_level,profile.section_id,profile.tve_qualification]);
 
@@ -2628,6 +2631,32 @@ const StudentDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+        {tab==="apps"&&(
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>🔗 Apps</div>
+            {linkedApps.length===0
+              ?<Card style={{textAlign:"center",padding:24,color:T.gray,fontSize:12}}>
+                  No apps have been added yet. Check back later!
+                </Card>
+              :linkedApps.map(app=>(
+                <a key={app.id} href={app.url} target="_blank" rel="noopener noreferrer"
+                  style={{textDecoration:"none"}}>
+                  <Card style={{marginBottom:10,display:"flex",alignItems:"center",
+                    gap:12,cursor:"pointer"}}>
+                    <span style={{fontSize:28,flexShrink:0}}>{app.icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:14,color:T.text}}>{app.name}</div>
+                      {app.description&&(
+                        <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>{app.description}</div>
+                      )}
+                    </div>
+                    <span style={{fontSize:16,color:T.textMuted,flexShrink:0}}>↗</span>
+                  </Card>
+                </a>
+              ))
+            }
+          </div>
+        )}
         {tab==="conduct"&&(
           <DisciplineTab profile={profile} scope="student"/>
         )}
@@ -2635,7 +2664,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
         </div>
       </div>
       <BottomNav
-        tabs={[["🌱","Dasig","dasig"],["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"],["🚨","Conduct","conduct"]]}
+        tabs={[["🌱","Dasig","dasig"],["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"],["🔗","Apps","apps"],["🚨","Conduct","conduct"]]}
         active={tab} setActive={setTab}/>
       <Toast msg={toast}/>
     </div>
@@ -4346,7 +4375,9 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [resetModal,setResetModal]=useState(null);
   const [addingStudent,setAddingStudent]=useState(false);
   const [qualifications,setQualifications]=useState([]); // [{id,name}] — admin-managed TVE qualifications
+  const [linkedApps,setLinkedApps]=useState([]); // [{id,name,url,icon,description,is_active,sort_order}] — student "Apps" tab directory
   const [nQualification,setNQualification]=useState("");
+  const [nLinkedApp,setNLinkedApp]=useState({name:"",url:"",icon:"",description:""});
 
   // Settings state
   const [isLocked,setIsLocked]=useState(false);
@@ -4363,7 +4394,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
-    const [sR,tR,subR,asR,gR,aR,secR,calR,settR,qR,holR]=await Promise.all([
+    const [sR,tR,subR,asR,gR,aR,secR,calR,settR,qR,holR,laR]=await Promise.all([
       supabase.from("profiles").select("*").eq("role","student").order("grade_level").order("name"),
       supabase.from("profiles").select("*").eq("role","teacher").order("name"),
       supabase.from("subjects").select("*").order("grade_level"),
@@ -4375,6 +4406,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
       supabase.from("app_settings").select("*"),
       supabase.from("tve_qualifications").select("*").order("name"),
       supabase.from("school_holidays").select("*").order("date"),
+      supabase.from("linked_apps").select("*").order("sort_order").order("name"),
     ]);
     if (sR.data) setStudents(sR.data);
     if (tR.data) setTeachers(tR.data);
@@ -4386,6 +4418,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
     if (calR.data) setCalendar(calR.data);
     if (qR.data) setQualifications(qR.data);
     if (holR.data) setHolidays(holR.data);
+    if (laR.data) setLinkedApps(laR.data);
     if (settR.data) {
       const lockSetting=settR.data.find(s=>s.key==="student_access_locked");
       if (lockSetting) setIsLocked(lockSetting.value==="true");
@@ -4823,6 +4856,51 @@ const AdminDashboard = ({ profile, onLogout }) => {
     notify("🗑️ TVE Qualification deleted."); fetchAll();
   };
 
+  // ── LINKED APPS (student "Apps" tab directory) ──
+  const addLinkedApp=async()=>{
+    const name=nLinkedApp.name.trim();
+    const url=nLinkedApp.url.trim();
+    if (!name||!url){notify("❌ Name and URL are required.");return;}
+    if (!/^https?:\/\//i.test(url)){
+      notify("❌ URL must start with http:// or https://");return;
+    }
+    const {error}=await supabase.from("linked_apps").insert({
+      name,url,icon:nLinkedApp.icon.trim()||"🔗",
+      description:nLinkedApp.description.trim()||null,
+      sort_order:linkedApps.length,
+    });
+    if (error){notify("❌ "+error.message);return;}
+    setNLinkedApp({name:"",url:"",icon:"",description:""});
+    notify("✅ App added!"); fetchAll();
+  };
+
+  const toggleLinkedApp=async app=>{
+    const {error}=await supabase.from("linked_apps")
+      .update({is_active:!app.is_active}).eq("id",app.id);
+    if (error){notify("❌ "+error.message);return;}
+    notify(app.is_active?"👁️‍🗨️ App hidden from students.":"✅ App visible to students."); fetchAll();
+  };
+
+  const moveLinkedApp=async(app,direction)=>{
+    const sorted=[...linkedApps].sort((a,b)=>a.sort_order-b.sort_order);
+    const idx=sorted.findIndex(a=>a.id===app.id);
+    const swapIdx=idx+direction;
+    if (swapIdx<0||swapIdx>=sorted.length) return;
+    const other=sorted[swapIdx];
+    await Promise.all([
+      supabase.from("linked_apps").update({sort_order:other.sort_order}).eq("id",app.id),
+      supabase.from("linked_apps").update({sort_order:app.sort_order}).eq("id",other.id),
+    ]);
+    fetchAll();
+  };
+
+  const delLinkedApp=async app=>{
+    if (!window.confirm(`Remove "${app.name}" from the Apps directory? Students will no longer see it.`)) return;
+    const {error}=await supabase.from("linked_apps").delete().eq("id",app.id);
+    if (error){notify("❌ "+error.message);return;}
+    notify("🗑️ App removed."); fetchAll();
+  };
+
   // ── SECTIONS ──
   const addSection=async()=>{
     if (!nSection.name){notify("❌ Section name required.");return;}
@@ -5155,6 +5233,62 @@ const AdminDashboard = ({ profile, onLogout }) => {
                     </div>
                   );
                 })
+              }
+            </Card>
+
+            {/* Linked Apps directory */}
+            <Card style={{marginTop:14}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:6}}>
+                🔗 Linked Apps
+              </div>
+              <div style={{fontSize:12,color:T.textMuted,marginBottom:12,lineHeight:1.7}}>
+                Apps listed here appear in every student's account under a dedicated "Apps" tab,
+                opening in a new browser tab when tapped. Hide an app temporarily with the eye
+                toggle instead of deleting it if you just need it off students' screens for a while.
+              </div>
+              <div style={{display:"grid",gap:8,marginBottom:8}}>
+                <input placeholder="App Name *" value={nLinkedApp.name}
+                  onChange={e=>setNLinkedApp(p=>({...p,name:e.target.value}))}/>
+                <input placeholder="https://... *" value={nLinkedApp.url}
+                  onChange={e=>setNLinkedApp(p=>({...p,url:e.target.value}))}/>
+                <div style={{display:"grid",gridTemplateColumns:"80px 1fr",gap:8}}>
+                  <input placeholder="🔗" value={nLinkedApp.icon} maxLength={4}
+                    onChange={e=>setNLinkedApp(p=>({...p,icon:e.target.value}))}/>
+                  <input placeholder="Short description (opt)" value={nLinkedApp.description}
+                    onChange={e=>setNLinkedApp(p=>({...p,description:e.target.value}))}/>
+                </div>
+              </div>
+              <Btn onClick={addLinkedApp} style={{width:"100%",marginBottom:12}}>➕ Add App</Btn>
+              {linkedApps.length===0
+                ?<div style={{textAlign:"center",color:T.gray,padding:14,fontSize:12}}>
+                    No apps added yet. Add one above.
+                  </div>
+                :[...linkedApps].sort((a,b)=>a.sort_order-b.sort_order).map((app,i,arr)=>(
+                  <div key={app.id} style={{display:"flex",justifyContent:"space-between",
+                    alignItems:"center",padding:"8px 10px",background:T.bgPanel,
+                    borderRadius:8,marginBottom:6,opacity:app.is_active?1:0.5,gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                      <span style={{fontSize:20,flexShrink:0}}>{app.icon}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.text}}>{app.name}</div>
+                        <div style={{fontSize:10,color:T.textMuted,overflow:"hidden",
+                          textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {app.description||app.url}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:4,flexShrink:0}}>
+                      <Btn color={T.gray} style={{padding:"5px 8px",fontSize:11}}
+                        disabled={i===0} onClick={()=>moveLinkedApp(app,-1)}>⬆️</Btn>
+                      <Btn color={T.gray} style={{padding:"5px 8px",fontSize:11}}
+                        disabled={i===arr.length-1} onClick={()=>moveLinkedApp(app,1)}>⬇️</Btn>
+                      <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
+                        onClick={()=>toggleLinkedApp(app)}>{app.is_active?"👁️":"🚫"}</Btn>
+                      <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
+                        onClick={()=>delLinkedApp(app)}>🗑️</Btn>
+                    </div>
+                  </div>
+                ))
               }
             </Card>
           </div>
