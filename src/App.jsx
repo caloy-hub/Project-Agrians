@@ -5869,9 +5869,15 @@ export default function App() {
   const [session,setSession]=useState(null);
   const [profile,setProfile]=useState(null);
   const [loading,setLoading]=useState(true);
+  const [initError,setInitError]=useState(null);
 
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>setSession(session));
+    supabase.auth.getSession()
+      .then(({data:{session},error})=>{
+        if(error){setInitError(error.message);setLoading(false);return;}
+        setSession(session);
+      })
+      .catch(err=>{setInitError(err?.message||"Could not reach the server.");setLoading(false);});
     const {data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>setSession(session));
     return ()=>subscription.unsubscribe();
   },[]);
@@ -5880,7 +5886,11 @@ export default function App() {
     if (!session){setProfile(null);setLoading(false);return;}
     setLoading(true);
     supabase.from("profiles").select("*").eq("id",session.user.id).single()
-      .then(({data})=>{setProfile(data);setLoading(false);});
+      .then(({data,error})=>{
+        if(error){setInitError(error.message);setProfile(null);setLoading(false);return;}
+        setProfile(data);setLoading(false);
+      })
+      .catch(err=>{setInitError(err?.message||"Could not load your profile.");setProfile(null);setLoading(false);});
   },[session]);
 
   const handleLogout=async()=>{
@@ -5894,6 +5904,18 @@ export default function App() {
       <MobileExperienceLayer />
       <InstallAppPrompt />
       {loading?<Spinner/>
+        :initError?(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",
+            background:T.bg,flexDirection:"column",gap:12,padding:24,textAlign:"center"}}>
+            <div style={{fontSize:32}}>⚠️</div>
+            <div style={{fontWeight:700,color:T.text||"#111"}}>Couldn't connect to AGRIANS</div>
+            <div style={{color:T.textMuted,fontSize:13,maxWidth:360}}>{initError}</div>
+            <button onClick={()=>window.location.reload()} style={{marginTop:8,padding:"10px 20px",
+              borderRadius:8,border:"none",background:T.green3,color:"#fff",fontWeight:700,cursor:"pointer"}}>
+              Retry
+            </button>
+          </div>
+        )
         :!session||!profile?<Login/>
         :profile.role==="student"?<StudentDashboard profile={profile} onLogout={handleLogout}/>
         :profile.role==="teacher"?<TeacherDashboard profile={profile} onLogout={handleLogout}/>
