@@ -1918,6 +1918,245 @@ const Login = () => {
 };
 
 // ─── STUDENT DASHBOARD ───────────────────────────────────
+// ─── DISCIPLINE MODULE (merged in from SILAB) ──────────────────────────
+// One shared component reused across all four dashboards. `scope` decides
+// what it can see/do:
+//   "student"          — read-only view of the learner's own record
+//   "adviser"          — log/view infractions for their advisory section
+//   "curriculum_head"  — log/view infractions across their assigned grade
+//   "admin"            — log/view everything, school-wide
+const VIOLATION_LABELS = {
+  absence: "Absence",
+  tardiness: "Tardiness",
+  uniform_violation: "Uniform Violation",
+  cutting_classes: "Cutting Classes",
+  other: "Other Violation",
+};
+const VIOLATION_COLORS = {
+  absence: "#ef4444",
+  tardiness: "#f59e0b",
+  uniform_violation: "#7b1fa2",
+  cutting_classes: "#fb923c",
+  other: "#64748b",
+};
+// Bump this at the start of each new term so the app knows what counts as
+// a "current" entry vs. a manually back-encoded one from an earlier term.
+const CURRENT_DISCIPLINE_TERM = 2;
+
+const DisciplineTab = ({ profile, scope, students=[], sections=[], sectionLabel }) => {
+  const isReadOnly = scope==="student";
+  const [entries,setEntries]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [toast,setToast]=useState("");
+  const notify=m=>{setToast(m);setTimeout(()=>setToast(""),2500);};
+
+  const [filterSection,setFilterSection]=useState(""); // CH/Admin: narrow to one section in their scope
+  const [search,setSearch]=useState("");
+  const [selStudent,setSelStudent]=useState("");
+  const [violations,setViolations]=useState([]);
+  const [otherDetail,setOtherDetail]=useState("");
+  const [remarks,setRemarks]=useState("");
+  const [incidentDate,setIncidentDate]=useState(new Date().toISOString().slice(0,10));
+  const [term,setTerm]=useState(CURRENT_DISCIPLINE_TERM);
+  const [submitting,setSubmitting]=useState(false);
+
+  const fetchEntries=useCallback(async()=>{
+    setLoading(true);
+    let q=supabase.from("infractions").select("*")
+      .order("incident_date",{ascending:false}).order("created_at",{ascending:false});
+    if (scope==="student") {
+      q=q.eq("student_id",profile.id);
+    } else if (scope==="adviser") {
+      q=q.eq("section_id",sections?.[0]?.id||"__none__");
+    } else if (scope==="curriculum_head") {
+      const ids=filterSection?[filterSection]:(sections||[]).map(s=>s.id);
+      q=q.in("section_id",ids.length?ids:["__none__"]);
+    } else if (scope==="admin" && filterSection) {
+      q=q.eq("section_id",filterSection);
+    }
+    const {data,error}=await q;
+    if (!error && data) setEntries(data);
+    setLoading(false);
+  },[scope,profile.id,sections,filterSection]);
+
+  useEffect(()=>{fetchEntries();},[fetchEntries]);
+
+  const studentsInScope = isReadOnly ? [] :
+    (filterSection ? students.filter(s=>s.section_id===filterSection) : students);
+
+  const filteredStudents = studentsInScope.filter(s=>{
+    const q=search.toLowerCase();
+    return !q || (s.name||"").toLowerCase().includes(q) || (s.lrn||"").includes(q);
+  });
+
+  const toggleViolation=v=>setViolations(p=>p.includes(v)?p.filter(x=>x!==v):[...p,v]);
+
+  const resolveSectionForStudent=studentId=>{
+    if (scope==="adviser") return sections?.[0]?.id||null;
+    const stu=studentsInScope.find(s=>s.id===studentId)||students.find(s=>s.id===studentId);
+    return stu?.section_id||null;
+  };
+
+  const handleSubmit=async()=>{
+    if (!selStudent) return notify("⚠️ Select a student.");
+    if (violations.length===0) return notify("⚠️ Select at least one violation.");
+    if (violations.includes("other") && !otherDetail.trim()) return notify("⚠️ Describe the 'Other' violation.");
+    setSubmitting(true);
+    const sectionId=resolveSectionForStudent(selStudent);
+    const inserts=violations.map(v=>({
+      student_id:selStudent,
+      section_id:sectionId,
+      violation_type:v,
+      violation_detail:v==="other"?otherDetail.trim():null,
+      remarks:remarks.trim()||null,
+      incident_date:incidentDate,
+      term,
+      is_backfill:term!==CURRENT_DISCIPLINE_TERM,
+      logged_by:profile.id,
+    }));
+    const {error}=await supabase.from("infractions").insert(inserts);
+    setSubmitting(false);
+    if (error) return notify("❌ "+error.message);
+    notify("✅ Infraction logged!");
+    setSelStudent(""); setViolations([]); setOtherDetail(""); setRemarks("");
+    setIncidentDate(new Date().toISOString().slice(0,10)); setTerm(CURRENT_DISCIPLINE_TERM);
+    fetchEntries();
+  };
+
+  const handleDelete=async id=>{
+    if (!window.confirm("Delete this infraction record?")) return;
+    const {error}=await supabase.from("infractions").delete().eq("id",id);
+    if (error) return notify("❌ "+error.message);
+    notify("🗑️ Deleted.");
+    fetchEntries();
+  };
+
+  const studentLabel=id=>{
+    const s=students.find(x=>x.id===id);
+    return s ? `${studentDisplay(s)} (LRN: ${s.lrn||"—"})` : "—";
+  };
+
+  const counts={};
+  entries.forEach(e=>{counts[e.violation_type]=(counts[e.violation_type]||0)+1;});
+
+  if (loading) return <Spinner/>;
+
+  return (
+    <div>
+      <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>
+        🚨 Discipline{sectionLabel?` — ${sectionLabel}`:""}
+      </div>
+      <Toast msg={toast}/>
+
+      {!isReadOnly && (
+        <Card style={{marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:8}}>📋 Log an Infraction</div>
+
+          {(scope==="curriculum_head"||scope==="admin") && sections?.length>1 && (
+            <select value={filterSection}
+              onChange={e=>{setFilterSection(e.target.value);setSelStudent("");}}
+              style={{marginBottom:8,width:"100%"}}>
+              <option value="">-- All Sections in Scope --</option>
+              {sections.map(sec=><option key={sec.id} value={sec.id}>{sec.name}</option>)}
+            </select>
+          )}
+
+          <input placeholder="🔎 Search student by name or LRN..." value={search}
+            onChange={e=>setSearch(e.target.value)} style={{width:"100%",marginBottom:8}}/>
+          <select value={selStudent} onChange={e=>setSelStudent(e.target.value)}
+            style={{width:"100%",marginBottom:8}}>
+            <option value="">-- Select Student --</option>
+            {filteredStudents.map(s=><option key={s.id} value={s.id}>{studentDisplay(s)} (LRN: {s.lrn})</option>)}
+          </select>
+
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+            {Object.keys(VIOLATION_LABELS).map(v=>(
+              <button key={v} type="button" onClick={()=>toggleViolation(v)}
+                style={{border:"1px solid #cbdcc9",borderRadius:999,padding:"6px 10px",fontSize:11,
+                  fontWeight:800,cursor:"pointer",
+                  background:violations.includes(v)?VIOLATION_COLORS[v]:T.white,
+                  color:violations.includes(v)?T.white:T.textMuted}}>
+                {violations.includes(v)?"✓ ":""}{VIOLATION_LABELS[v]}
+              </button>
+            ))}
+          </div>
+          {violations.includes("other")&&(
+            <input placeholder="Describe the 'Other' violation..." value={otherDetail}
+              onChange={e=>setOtherDetail(e.target.value)} style={{width:"100%",marginBottom:8}}/>
+          )}
+          <textarea rows={2} placeholder="Remarks (optional)" value={remarks}
+            onChange={e=>setRemarks(e.target.value)} style={{width:"100%",marginBottom:8}}/>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:4}}>
+            <div>
+              <label style={{fontSize:11,color:T.textMuted,display:"block",marginBottom:4}}>Incident Date</label>
+              <input type="date" value={incidentDate} onChange={e=>setIncidentDate(e.target.value)} style={{width:"100%"}}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:T.textMuted,display:"block",marginBottom:4}}>Term</label>
+              <select value={term} onChange={e=>setTerm(Number(e.target.value))} style={{width:"100%"}}>
+                <option value={1}>Term 1</option>
+                <option value={2}>Term 2</option>
+                <option value={3}>Term 3</option>
+              </select>
+            </div>
+          </div>
+          {term!==CURRENT_DISCIPLINE_TERM && (
+            <div style={{fontSize:11,color:T.yellowDark,background:"#fffbeb",padding:"6px 10px",
+              borderRadius:6,marginBottom:8,fontWeight:700}}>
+              🕘 Backfill entry — this saves as a Term {term} record even though Term {CURRENT_DISCIPLINE_TERM}
+              is the active term. Use this to catch up on records from a previous term.
+            </div>
+          )}
+          <Btn onClick={handleSubmit} disabled={submitting} style={{width:"100%"}}>
+            {submitting?"⏳ Saving...":"📌 Log Infraction"}
+          </Btn>
+        </Card>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(90px,1fr))",gap:8,marginBottom:12}}>
+        {Object.entries(VIOLATION_LABELS).map(([k,label])=>(
+          <Card key={k} style={{padding:10,textAlign:"center"}}>
+            <div style={{fontSize:18,fontWeight:800,color:T.text}}>{counts[k]||0}</div>
+            <div style={{fontSize:9,color:T.textMuted,fontWeight:700}}>{label}</div>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:8}}>
+          {isReadOnly?"📜 My Conduct Record":"📜 Infraction Log"} ({entries.length})
+        </div>
+        {entries.length===0
+          ? <div style={{textAlign:"center",color:T.gray,padding:20}}>No infractions recorded.</div>
+          : entries.map(e=>(
+            <div key={e.id} style={{borderBottom:"1px solid #edf2ed",padding:"8px 0"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{fontWeight:700,fontSize:12,color:T.text}}>
+                  {!isReadOnly ? studentLabel(e.student_id) : e.incident_date}
+                </div>
+                <Badge text={VIOLATION_LABELS[e.violation_type]} color={VIOLATION_COLORS[e.violation_type]}/>
+              </div>
+              <div style={{fontSize:11,color:T.textMuted,marginTop:2}}>
+                📅 {e.incident_date} · Term {e.term}{e.is_backfill?" · 🕘 Backfilled":""}
+              </div>
+              {e.violation_detail&&<div style={{fontSize:11,color:T.text,marginTop:2}}>{e.violation_detail}</div>}
+              {e.remarks&&<div style={{fontSize:11,color:T.textMuted,fontStyle:"italic",marginTop:2}}>{e.remarks}</div>}
+              {!isReadOnly && e.logged_by===profile.id && (
+                <button onClick={()=>handleDelete(e.id)}
+                  style={{marginTop:4,fontSize:10,color:T.red,background:"none",border:"none",
+                    cursor:"pointer",fontWeight:700}}>
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
+          ))
+        }
+      </Card>
+    </div>
+  );
+};
+
 const StudentDashboard = ({ profile, onLogout }) => {
   const [tab,setTab]=useState("grades");
   const [dasigPulse,setDasigPulse]=useState(0);
@@ -2366,11 +2605,14 @@ const StudentDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+        {tab==="conduct"&&(
+          <DisciplineTab profile={profile} scope="student"/>
+        )}
           </div>
         </div>
       </div>
       <BottomNav
-        tabs={[["🌱","Dasig","dasig"],["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"]]}
+        tabs={[["🌱","Dasig","dasig"],["👤","Profile","profile"],["📊","Grades","grades"],["📅","Appt","appointment"],["🚨","Conduct","conduct"]]}
         active={tab} setActive={setTab}/>
       <Toast msg={toast}/>
     </div>
@@ -3372,6 +3614,19 @@ const TeacherDashboard = ({ profile, onLogout }) => {
   if (mySection) tabs.splice(1,0,["🏫","My Class","myclass"],["📆","Attendance","attendance"],
     ["🏆","Honors","honors"],["📄","Forms","reports"]);
   if (profile.is_curriculum_head) tabs.push(["🎓","Students","chstudents"]);
+  if (mySection || profile.is_curriculum_head) tabs.push(["🚨","Discipline","discipline"]);
+
+  // Curriculum Head scope takes precedence when a teacher happens to be
+  // both a CH and an adviser (their advisory section is normally already
+  // inside the grade they head, so this is not a loss of scope).
+  const disciplineScope = profile.is_curriculum_head ? "curriculum_head" : (mySection ? "adviser" : null);
+  const disciplineStudents = profile.is_curriculum_head ? chStudents : classStudents;
+  const disciplineSections = profile.is_curriculum_head
+    ? sections.filter(s=>s.grade_level===profile.assigned_grade_level)
+    : (mySection ? [mySection] : []);
+  const disciplineLabel = profile.is_curriculum_head
+    ? `Curriculum Head · Grade ${profile.assigned_grade_level}`
+    : (mySection ? `Adviser · ${mySection.name}` : "");
 
   if (loading) return <Spinner/>;
 
@@ -3800,6 +4055,12 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   onEdit={s=>setEditStudent(s)} qualifications={qualifications}/>
             }
           </div>
+        )}
+
+        {tab==="discipline"&&disciplineScope&&(
+          <DisciplineTab profile={profile} scope={disciplineScope}
+            students={disciplineStudents} sections={disciplineSections}
+            sectionLabel={disciplineLabel}/>
         )}
 
         {tab==="review"&&(
@@ -5507,6 +5768,11 @@ const AdminDashboard = ({ profile, onLogout }) => {
             }
           </div>
         )}
+
+        {tab==="discipline"&&(
+          <DisciplineTab profile={profile} scope="admin" students={students} sections={sections}
+            sectionLabel="All Sections"/>
+        )}
           </div>
         </div>
       </div>
@@ -5518,6 +5784,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
           ["🏫","Sections","sections"],["📚","Subjects","subjects"],
           ["📝","Grades","grades"],["📅","Calendar","calendar"],
           ["📄","Forms","forms"],["🗓️","Appts","appointments"],
+          ["🚨","Discipline","discipline"],
         ]}
         active={tab} setActive={setTab}/>
     </div>
