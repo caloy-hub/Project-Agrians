@@ -23,6 +23,36 @@ import {
   PDFImage,
 } from "https://esm.sh/pdf-lib@1.17.1";
 
+// Case/whitespace-insensitive name comparison, used throughout subject
+// matching below so a stored name like "Mapeh" or "TVE " still resolves
+// against the exact-case labels this file's templates use.
+const norm = (v: any) => String(v || "").trim().toUpperCase();
+
+// Some of the fixed template labels ("ICF", "TVE") are short abbreviations
+// standing in for a subject a school may type out in full in Admin ->
+// Subjects (e.g. "Internet and Computer Fundamentals", or
+// "Technical-Vocational Education"). An abbreviation and its spelled-out
+// name are two entirely different strings, so no amount of case/whitespace
+// normalization bridges them on its own — this produces the same symptom
+// every time: the row appears (the label is hardcoded regardless of what's
+// in the database) but the value never resolves, because nothing in the
+// database is named literally "ICF" or "TVE".
+//
+// Splits on both whitespace AND hyphens so a hyphenated compound word like
+// "Technical-Vocational" still contributes one initial per part ("T", "V"),
+// the way a human reading the title as an acronym would.
+const ACRONYM_STOPWORDS = new Set([
+  "and", "of", "the", "in", "for", "to", "a", "an", "on", "or",
+]);
+const acronymOf = (name: string) =>
+  String(name || "")
+    .trim()
+    .split(/[\s-]+/)
+    .filter((w) => w && !ACRONYM_STOPWORDS.has(w.toLowerCase()))
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -289,7 +319,44 @@ serve(async (req: Request) => {
     ]);
 
     const section = sectionRes.data;
-    const subjects = subjectsRes.data || [];
+    // A Grade 11/12 section can hold students on different tracks (Academic
+    // vs TechPro; TVL-AFA vs TVL-HE) sharing the same section/grade_level.
+    // A subject scoped to one track via subjects.shs_track must never show
+    // up for a student on a different track. profiles.shs_track stores the
+    // full label including any sub-specialization (e.g.
+    // "TechPro - Bakery Operations"), while a subject's own scope is the
+    // coarser track tag ("TechPro") — so the match is "does the student's
+    // stored track start with the subject's track tag", not exact equality.
+    const trackMatches = (subjectTrack: any, studentTrack: any): boolean => {
+      if (!subjectTrack) return true; // no scope set -> applies to every track
+      if (!studentTrack) return false; // subject requires a track, student has none on file
+      return String(studentTrack).trim().toUpperCase().startsWith(
+        String(subjectTrack).trim().toUpperCase()
+      );
+    };
+    // A grade level's subjects can be scoped per-section (subjects.section_id
+    // — added so different teachers can each own one section's copy of the
+    // same subject name, e.g. a second Grade 10 section's own MAPEH parent/
+    // components or its own TVE line), per-curriculum (subjects.curriculum
+    // — ALS learners in Grades 11-12 use the same SF9 template as regular
+    // SHS but an entirely different, "old curriculum" subject list living in
+    // the same grade_level), and per-track (subjects.shs_track, see above).
+    // Every name-based lookup below (MAPEH parent/child resolution, TVE
+    // resolution, SHS subject order) must only ever see subjects that
+    // actually apply to THIS student: grade-wide rows (section_id null) plus
+    // rows scoped to this student's own section, matching this student's own
+    // curriculum, matching this student's own track. Without this filter,
+    // `.find()`/`.filter()` by name can silently match a different section's
+    // (or curriculum's, or track's) row whose `grades` belong to an entirely
+    // different class — rendering as blank, or worse, showing a subject the
+    // student was never actually enrolled in.
+    const studentCurriculum = student.curriculum || "regular";
+    const subjects = (subjectsRes.data || []).filter(
+      (s: any) =>
+        (!s.section_id || s.section_id === student.section_id) &&
+        ((s.curriculum || "regular") === studentCurriculum) &&
+        trackMatches(s.shs_track, student.shs_track)
+    );
     const grades = gradesRes.data || [];
     const subjectById: Record<string, any> = {};
     for (const s of subjects) subjectById[s.id] = s;
@@ -531,15 +598,27 @@ serve(async (req: Request) => {
           // Use the base subject name for the grade lookup (matches
           // subjects.name in the database), not the display label, since
           // the TVE row's label includes "(Qualification)" for display only.
-          const lookupName = label.startsWith("TVE") ? "TVE" : label;
+          const isTveRow = label.startsWith("TVE");
+          const lookupName = isTveRow ? "TVE" : label;
 
           // If this label matches a subject that has components (e.g.
           // MAPEH's PE and Health / Music and Arts, or any similar setup
           // in SHS), its value is always the average of whichever
           // components have a grade for that term — never a directly
           // encoded grade of its own.
+          //
+          // Match case-/whitespace-insensitively. getSubjectOrder() above
+          // already resolves the MAPEH parent this way (so components show
+          // up under the "MAPEH" label even if the DB row is actually named
+          // "Mapeh" or "MAPEH " etc.) — but this row always DISPLAYS the
+          // fixed literal "MAPEH" regardless of the DB's actual casing. A
+          // case-sensitive `s.name === label` re-lookup here would silently
+          // fail to find that same subject whenever its stored name isn't
+          // an exact-case "MAPEH", producing exactly what the label lookup
+          // above was written to avoid: the row appears, but every value is
+          // blank because the "parent" was never found the second time.
           const parentSubj = subjects.find((s: any) =>
-            s.name === label && !s.parent_subject_id
+            norm(s.name) === norm(label) && !s.parent_subject_id
           );
           const childSubjs = parentSubj
             ? subjects.filter((s: any) => s.parent_subject_id === parentSubj.id)
@@ -563,16 +642,69 @@ serve(async (req: Request) => {
                 );
               }
             }
+          } else if (isTveRow) {
+            // TVE subjects are scoped by the `tve_qualification` column, not
+            // by a literal subject name of "TVE" — schools commonly name the
+            // subject after the actual qualification instead (e.g.
+            // "TVE-AgriCrop Production", as shown in this very row's label).
+            // The old bare `name === "TVE"` match silently found nothing for
+            // any school using that convention, and even where a subject
+            // literally named "TVE" exists, it never checked the
+            // qualification, so a student could pick up another track's row.
+            // Match this student's own qualification first; fall back to an
+            // unqualified "TVE" row, then to a subject literally named after
+            // the qualification, then — for grades like 7 where there's no
+            // qualification concept at all yet, so student.tve_qualification
+            // is always empty and every attempt above trivially fails — an
+            // acronym match against a spelled-out name such as
+            // "Technical-Vocational Education", the same mechanism that
+            // rescues "ICF" against "Internet and Computer Fundamentals".
+            const actualSubj =
+              subjects.find((s: any) =>
+                !s.parent_subject_id && s.tve_qualification &&
+                student.tve_qualification &&
+                s.tve_qualification === student.tve_qualification
+              ) ||
+              subjects.find((s: any) =>
+                !s.parent_subject_id && !s.tve_qualification &&
+                String(s.name || "").trim().toUpperCase() === "TVE"
+              ) ||
+              subjects.find((s: any) =>
+                !s.parent_subject_id &&
+                String(s.name || "").trim() === String(student.tve_qualification || "").trim()
+              ) ||
+              subjects.find((s: any) =>
+                !s.parent_subject_id && acronymOf(s.name) === "TVE"
+              );
+            g = actualSubj ? (gradeMap[actualSubj.id] || {}) : {};
           } else {
             const directSubj = subjects.find((s: any) =>
-              s.name === lookupName && !s.parent_subject_id
+              norm(s.name) === norm(lookupName) && !s.parent_subject_id
             );
             // A displayed indented MAPEH component is itself a child subject,
             // so find it by its exact name even though it is not a parent.
             const componentSubj = subjects.find((s: any) =>
-              s.name === label && !!s.parent_subject_id
+              norm(s.name) === norm(label) && !!s.parent_subject_id
             );
-            const actualSubj = componentSubj || directSubj;
+            // Some of the fixed JHS template labels are short abbreviations
+            // ("ICF") standing in for a subject that a school actually types
+            // out in full in Admin -> Subjects (e.g. "Internet and Computer
+            // Fundamentals"). An abbreviation and its spelled-out name are
+            // two entirely different strings, so no amount of case/whitespace
+            // normalization above will ever bridge them — this produces
+            // exactly the same symptom as the MAPEH bug fixed earlier
+            // (the row appears, because the label is hardcoded regardless of
+            // what's in the database, but the value never resolves). If
+            // nothing matched directly and the label itself looks like a
+            // bare acronym (short, all caps, no spaces), fall back to the
+            // shared acronymOf() match defined near the top of this file.
+            let acronymSubj: any = null;
+            if (!directSubj && !componentSubj && /^[A-Z]{2,6}$/.test(lookupName)) {
+              acronymSubj = subjects.find(
+                (s: any) => !s.parent_subject_id && acronymOf(s.name) === lookupName
+              );
+            }
+            const actualSubj = componentSubj || directSubj || acronymSubj;
             g = actualSubj ? (gradeMap[actualSubj.id] || {}) : {};
           }
 

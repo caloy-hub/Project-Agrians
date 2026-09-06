@@ -48,7 +48,7 @@ serve(async (req: Request) => {
     let {
       role, email, password, name,
       lrn, grade_level, section_id, gender, birthday, address,
-      tve_qualification, shs_track,
+      tve_qualification, shs_track, curriculum,
     } = body;
 
     // Curriculum heads may only ever create students, and only within their
@@ -128,6 +128,11 @@ serve(async (req: Request) => {
       profileData.address     = address  || null;
       profileData.tve_qualification = tve_qualification || null;
       profileData.shs_track         = shs_track || null;
+      // ALS (Alternative Learning System / old curriculum) vs the standard
+      // DepEd K-12 subject list. Anything other than exactly "als" is
+      // treated as the regular curriculum — never trust an unrecognized
+      // client-supplied value into a column the reports rely on.
+      profileData.curriculum = curriculum === "als" ? "als" : "regular";
     }
 
     const { error: insertError } = await adminClient

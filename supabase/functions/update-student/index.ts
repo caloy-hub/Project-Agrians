@@ -11,7 +11,7 @@ const corsHeaders = {
 // specifically the "fix a typo / wrong section / wrong LRN" edit flow.)
 const EDITABLE_FIELDS = [
   "name", "lrn", "gender", "birthday", "address",
-  "section_id", "tve_qualification", "shs_track",
+  "section_id", "tve_qualification", "shs_track", "curriculum",
   "enrollment_status", "status_date",
 ];
 
