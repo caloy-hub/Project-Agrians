@@ -1943,7 +1943,11 @@ const VIOLATION_COLORS = {
 // a "current" entry vs. a manually back-encoded one from an earlier term.
 const CURRENT_DISCIPLINE_TERM = 2;
 
-const DisciplineTab = ({ profile, scope, students=[], sections=[], sectionLabel }) => {
+// Stable empty-array reference — using inline `=[]` defaults here would create a
+// brand-new array on every render, which breaks the useCallback/useEffect below
+// and causes an infinite fetch loop (seen as ERR_INSUFFICIENT_RESOURCES).
+const EMPTY_LIST = [];
+const DisciplineTab = ({ profile, scope, students=EMPTY_LIST, sections=EMPTY_LIST, sectionLabel }) => {
   const isReadOnly = scope==="student";
   const [entries,setEntries]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -1960,23 +1964,33 @@ const DisciplineTab = ({ profile, scope, students=[], sections=[], sectionLabel 
   const [term,setTerm]=useState(CURRENT_DISCIPLINE_TERM);
   const [submitting,setSubmitting]=useState(false);
 
+  const [loadError,setLoadError]=useState("");
+
   const fetchEntries=useCallback(async()=>{
     setLoading(true);
-    let q=supabase.from("infractions").select("*")
-      .order("incident_date",{ascending:false}).order("created_at",{ascending:false});
-    if (scope==="student") {
-      q=q.eq("student_id",profile.id);
-    } else if (scope==="adviser") {
-      q=q.eq("section_id",sections?.[0]?.id||"__none__");
-    } else if (scope==="curriculum_head") {
-      const ids=filterSection?[filterSection]:(sections||[]).map(s=>s.id);
-      q=q.in("section_id",ids.length?ids:["__none__"]);
-    } else if (scope==="admin" && filterSection) {
-      q=q.eq("section_id",filterSection);
+    setLoadError("");
+    try {
+      let q=supabase.from("infractions").select("*")
+        .order("incident_date",{ascending:false}).order("created_at",{ascending:false});
+      if (scope==="student") {
+        q=q.eq("student_id",profile.id);
+      } else if (scope==="adviser") {
+        q=q.eq("section_id",sections?.[0]?.id||"__none__");
+      } else if (scope==="curriculum_head") {
+        const ids=filterSection?[filterSection]:(sections||[]).map(s=>s.id);
+        q=q.in("section_id",ids.length?ids:["__none__"]);
+      } else if (scope==="admin" && filterSection) {
+        q=q.eq("section_id",filterSection);
+      }
+      const {data,error}=await q;
+      if (error) { setLoadError(error.message); setEntries([]); }
+      else setEntries(data||[]);
+    } catch(err) {
+      setLoadError(err?.message||"Could not load conduct records.");
+      setEntries([]);
+    } finally {
+      setLoading(false);
     }
-    const {data,error}=await q;
-    if (!error && data) setEntries(data);
-    setLoading(false);
   },[scope,profile.id,sections,filterSection]);
 
   useEffect(()=>{fetchEntries();},[fetchEntries]);
@@ -2040,6 +2054,15 @@ const DisciplineTab = ({ profile, scope, students=[], sections=[], sectionLabel 
   entries.forEach(e=>{counts[e.violation_type]=(counts[e.violation_type]||0)+1;});
 
   if (loading) return <Spinner/>;
+
+  if (loadError) return (
+    <div style={{textAlign:"center",padding:24}}>
+      <div style={{fontSize:28,marginBottom:8}}>⚠️</div>
+      <div style={{fontWeight:700,color:T.green1,marginBottom:4}}>Couldn't load conduct records</div>
+      <div style={{color:T.gray,fontSize:13,marginBottom:12}}>{loadError}</div>
+      <Btn onClick={fetchEntries}>Retry</Btn>
+    </div>
+  );
 
   return (
     <div>
@@ -5869,9 +5892,15 @@ export default function App() {
   const [session,setSession]=useState(null);
   const [profile,setProfile]=useState(null);
   const [loading,setLoading]=useState(true);
+  const [initError,setInitError]=useState(null);
 
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>setSession(session));
+    supabase.auth.getSession()
+      .then(({data:{session},error})=>{
+        if(error){setInitError(error.message);setLoading(false);return;}
+        setSession(session);
+      })
+      .catch(err=>{setInitError(err?.message||"Could not reach the server.");setLoading(false);});
     const {data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>setSession(session));
     return ()=>subscription.unsubscribe();
   },[]);
@@ -5880,7 +5909,11 @@ export default function App() {
     if (!session){setProfile(null);setLoading(false);return;}
     setLoading(true);
     supabase.from("profiles").select("*").eq("id",session.user.id).single()
-      .then(({data})=>{setProfile(data);setLoading(false);});
+      .then(({data,error})=>{
+        if(error){setInitError(error.message);setProfile(null);setLoading(false);return;}
+        setProfile(data);setLoading(false);
+      })
+      .catch(err=>{setInitError(err?.message||"Could not load your profile.");setProfile(null);setLoading(false);});
   },[session]);
 
   const handleLogout=async()=>{
@@ -5894,6 +5927,18 @@ export default function App() {
       <MobileExperienceLayer />
       <InstallAppPrompt />
       {loading?<Spinner/>
+        :initError?(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",
+            background:T.bg,flexDirection:"column",gap:12,padding:24,textAlign:"center"}}>
+            <div style={{fontSize:32}}>⚠️</div>
+            <div style={{fontWeight:700,color:T.text||"#111"}}>Couldn't connect to AGRIANS</div>
+            <div style={{color:T.textMuted,fontSize:13,maxWidth:360}}>{initError}</div>
+            <button onClick={()=>window.location.reload()} style={{marginTop:8,padding:"10px 20px",
+              borderRadius:8,border:"none",background:T.green3,color:"#fff",fontWeight:700,cursor:"pointer"}}>
+              Retry
+            </button>
+          </div>
+        )
         :!session||!profile?<Login/>
         :profile.role==="student"?<StudentDashboard profile={profile} onLogout={handleLogout}/>
         :profile.role==="teacher"?<TeacherDashboard profile={profile} onLogout={handleLogout}/>
