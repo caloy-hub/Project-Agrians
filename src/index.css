@@ -5,41 +5,71 @@
 
 /* ── CSS Custom Properties ───────────────────────────────── */
 :root {
-  /* Color Palette — Green & Slate */
-  --hue-primary: 152;
-  --hue-accent: 152;
+  /* Color Palette — Space Gray, Emerald & Collegiate Accents */
+  --hue-primary: 160;
+  --hue-accent: 160;
 
-  /* Light Mode */
+  /* Space Gray Foundation */
+  --space-gray-950: #030712;
+  --space-gray-900: #0f172a;
+  --space-gray-800: #1e293b;
+  --space-gray-700: #334155;
+  --space-gray-600: #475569;
+  --space-gray-500: #64748b;
+  --space-gray-400: #94a3b8;
+  --space-gray-300: #cbd5e1;
+  --space-gray-200: #e2e8f0;
+  --space-gray-100: #f1f5f9;
+  --space-gray-50: #f8fafc;
+
+  /* Light Mode Surfaces */
   --bg-root: #f8fafc;
   --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
+  --bg-panel: #f1f5f9;
   --bg-code: #f1f5f9;
   --bg-hover: rgba(15, 23, 42, 0.04);
   --bg-active: rgba(15, 23, 42, 0.08);
 
+  /* Typography */
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
   --text-inverse: #f8fafc;
 
-  --accent: #2F6B4C;
-  --accent-light: #3E8A63;
-  --accent-dark: #1F4638;
-  --accent-glow: rgba(47, 107, 76, 0.25);
-  --accent-bg: rgba(47, 107, 76, 0.08);
-  --accent-border: rgba(47, 107, 76, 0.35);
+  /* Signature Emerald */
+  --accent: #059669;
+  --accent-light: #10b981;
+  --accent-dark: #064e3b;
+  --accent-glow: rgba(5, 150, 105, 0.22);
+  --accent-bg: rgba(5, 150, 105, 0.08);
+  --accent-border: rgba(5, 150, 105, 0.3);
 
-  --border-subtle: rgba(148, 163, 184, 0.2);
-  --border-default: rgba(148, 163, 184, 0.35);
-  --border-strong: rgba(148, 163, 184, 0.55);
+  /* Collegiate Contrast Accents */
+  --accent-gold: #f59e0b;
+  --accent-gold-dark: #d97706;
+  --accent-gold-bg: rgba(245, 158, 11, 0.12);
+  --accent-blue: #2563eb;
+  --accent-blue-bg: rgba(37, 99, 235, 0.1);
+  --accent-red: #e11d48;
+  --accent-red-bg: rgba(225, 29, 72, 0.1);
+  --accent-purple: #7c3aed;
+  --accent-purple-bg: rgba(124, 58, 237, 0.1);
 
-  /* Shadows — layered for depth */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
-  --shadow-glow: 0 0 20px var(--accent-glow);
-  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.04);
+  /* Precise Borders */
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+  --border-dark: #334155;
+
+  /* Shadows — crisp layered elevations */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.09), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.10), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+  --shadow-glow: 0 0 24px var(--accent-glow);
+  --shadow-inner: inset 0 2px 4px 0 rgba(15, 23, 42, 0.04);
 
   /* Spacing Scale */
   --space-1: 0.25rem;
@@ -94,33 +124,34 @@
 /* ── Dark Mode ───────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-root: #020617;
-    --bg-surface: #0f172a;
-    --bg-elevated: #1e293b;
-    --bg-code: #1e293b;
-    --bg-hover: rgba(255, 255, 255, 0.04);
-    --bg-active: rgba(255, 255, 255, 0.08);
+    --bg-root: #0b0f17;
+    --bg-surface: #111827;
+    --bg-elevated: #1f2937;
+    --bg-panel: #162032;
+    --bg-code: #1f2937;
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-active: rgba(255, 255, 255, 0.09);
 
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --text-inverse: #0f172a;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-inverse: #0b0f17;
 
-    --accent: #5CA37D;
-    --accent-light: #8FC49A;
-    --accent-dark: #3E8A63;
-    --accent-glow: rgba(92, 163, 125, 0.25);
-    --accent-bg: rgba(92, 163, 125, 0.1);
-    --accent-border: rgba(92, 163, 125, 0.4);
+    --accent: #10b981;
+    --accent-light: #34d399;
+    --accent-dark: #059669;
+    --accent-glow: rgba(16, 185, 129, 0.25);
+    --accent-bg: rgba(16, 185, 129, 0.12);
+    --accent-border: rgba(16, 185, 129, 0.4);
 
-    --border-subtle: rgba(255, 255, 255, 0.06);
-    --border-default: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.18);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-default: rgba(255, 255, 255, 0.14);
+    --border-strong: rgba(255, 255, 255, 0.22);
 
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
   }
 }
 

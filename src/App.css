@@ -1273,12 +1273,14 @@ tbody tr:last-child td {
    AGRIANS 2.0 — modern visual system
    ============================================================ */
 :root{
-  --agri-deep:#102f22;
-  --agri-forest:#1f5a3e;
-  --agri-green:#2f8a57;
-  --agri-lime:#a7cf68;
-  --agri-gold:#f5c842;
-  --agri-cream:#f7f8f2;
+  --agri-deep:#0f172a;
+  --agri-forest:#064e3b;
+  --agri-green:#059669;
+  --agri-emerald:#10b981;
+  --agri-lime:#34d399;
+  --agri-gold:#f59e0b;
+  --agri-cream:#f8fafc;
+  --agri-slate:#1e293b;
 }
 
 .dashboard-scroll{
@@ -1294,25 +1296,26 @@ tbody tr:last-child td {
 
 .welcome-panel{
   position:relative;
-  min-height:188px;
+  min-height:180px;
   overflow:hidden;
   isolation:isolate;
   border-radius:24px;
-  padding:28px 32px;
-  margin-bottom:22px;
+  padding:26px 32px;
+  margin-bottom:20px;
   color:#fff;
   background:
-    radial-gradient(circle at 82% 25%,rgba(167,207,104,.24),transparent 25%),
-    linear-gradient(135deg,#102f22 0%,#1f5a3e 58%,#2f8a57 100%);
-  border:1px solid rgba(255,255,255,.12);
-  box-shadow:0 18px 45px rgba(16,47,34,.18);
+    radial-gradient(circle at 88% 25%,rgba(16,185,129,.18),transparent 28%),
+    radial-gradient(circle at 12% 85%,rgba(245,158,11,.12),transparent 25%),
+    linear-gradient(135deg,#0f172a 0%,#1e293b 40%,#064e3b 80%,#059669 100%);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 18px 45px rgba(15,23,42,.22), 0 4px 12px rgba(5,150,105,.12);
 }
 .welcome-panel:after{
   content:"";
   position:absolute;inset:0;
-  background-image:linear-gradient(120deg,rgba(255,255,255,.05) 1px,transparent 1px);
-  background-size:34px 34px;
-  mask-image:linear-gradient(to right,black,transparent 70%);
+  background-image:linear-gradient(120deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:32px 32px;
+  mask-image:linear-gradient(to right,black,transparent 75%);
   pointer-events:none;
 }
 .welcome-content{position:relative;z-index:3;max-width:760px;}
@@ -1586,3 +1589,393 @@ button { touch-action: manipulation; }
 @media(max-width:760px){.admin-stat-head{flex-direction:column}.admin-stat-controls{min-width:0;width:100%}.admin-stat-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-stat-two-col{grid-template-columns:1fr}.teacher-field-buddy{right:10px;bottom:72px}.teacher-field-buddy-card{width:min(310px,calc(100vw - 28px));right:-2px}}
 @media(prefers-reduced-motion:reduce){.teacher-buddy-bird,.teacher-buddy-pulse,.teacher-field-buddy-card{animation:none!important}.teacher-field-buddy-toggle{transition:none}}
 .admin-stat-export{border:1px solid #cfe0d3;background:#eef6ec;color:#2f6b4c;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}.admin-stat-export:hover{transform:translateY(-1px)}
+
+/* ============================================================
+   ADMIN STRATEGIC NAVIGATION HUB & DATA REDESIGN
+   ============================================================ */
+
+/* ── Admin Master Nav Hub ────────────────────────────────── */
+.admin-hub-bar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px clamp(12px, 3vw, 32px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  .admin-hub-bar {
+    background: rgba(17, 24, 39, 0.92);
+  }
+}
+
+.admin-hub-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-module-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.admin-module-selector::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-module-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast) var(--ease-in-out);
+}
+.admin-module-btn:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+.admin-module-btn.active {
+  background: var(--space-gray-900);
+  color: #ffffff;
+  border-color: var(--space-gray-900);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+}
+@media (prefers-color-scheme: dark) {
+  .admin-module-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+  }
+}
+
+.admin-subtab-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: none;
+}
+.admin-subtab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-subtab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast) var(--ease-in-out);
+}
+.admin-subtab-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.admin-subtab-pill.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 800;
+  border-color: var(--accent-border);
+}
+
+/* ── Strategic Roster Filter Bar ─────────────────────────── */
+.roster-toolbar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.roster-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.roster-search-box {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+.roster-search-input {
+  width: 100%;
+  padding: 8px 12px 8px 34px !important;
+  font-size: 12.5px !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--border-default) !important;
+}
+.roster-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.grade-pill-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.grade-pill {
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-in-out);
+}
+.grade-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.grade-pill.active {
+  background: var(--space-gray-900);
+  color: #ffffff;
+  border-color: var(--space-gray-900);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  .grade-pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+}
+
+.filter-action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ── Modern High-Density Student Row ─────────────────────── */
+.student-row-modern {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+  transition: all var(--duration-fast) var(--ease-in-out);
+  overflow: hidden;
+}
+.student-row-modern:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.student-row-modern.is-expanded {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-md);
+}
+
+.student-row-header {
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.student-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--bg-panel);
+  color: var(--space-gray-700);
+  font-weight: 800;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+}
+.student-avatar.male {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+.student-avatar.female {
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
+  border-color: rgba(225, 29, 72, 0.25);
+}
+
+.student-info-main {
+  flex: 1;
+  min-width: 0;
+}
+.student-name-line {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.student-meta-chips {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.student-drawer-panel {
+  background: var(--bg-panel);
+  padding: 10px 14px 12px;
+  border-top: 1px dashed var(--border-default);
+  animation: fadeIn var(--duration-fast) ease-out;
+}
+.student-drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  font-size: 11px;
+}
+.student-drawer-item {
+  background: var(--bg-surface);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+.student-drawer-item span {
+  color: var(--text-muted);
+  display: block;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  margin-bottom: 1px;
+}
+.student-drawer-item strong {
+  color: var(--text-primary);
+}
+
+/* ── Section Accordion Header ────────────────────────────── */
+.section-accordion-head {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  transition: all var(--duration-fast) ease;
+}
+.section-accordion-head:hover {
+  background: var(--border-subtle);
+}
+
+/* ── Subjects 3-Way Subview Selector ─────────────────────── */
+.segmented-view-picker {
+  display: flex;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.segmented-view-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 700;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.segmented-view-btn:hover {
+  color: var(--text-primary);
+}
+.segmented-view-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Grade Management Enhancements ────────────────────────── */
+.grade-record-row {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  transition: all var(--duration-fast) ease;
+}
+.grade-record-row:hover {
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.grade-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+

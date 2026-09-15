@@ -19,6 +19,29 @@ import mcpbahsLogo from "./mcpbahs-logo.png";
 import dasigAgrianMascot from "./dasig-agrian-mascot-clean.png";
 import "./App.css";
 
+// Supabase/PostgREST caps any query at its default row limit (1000 rows)
+// unless you explicitly page past it. Tables that scale with the size of
+// the school — grades (student × subject × term), the student roster,
+// subject_assignments, and appointments — can all exceed that on a real
+// campus, and a plain `.select("*")` silently truncates instead of erroring,
+// which makes fully-encoded data look "missing" in admin-level aggregates
+// (Admin Statistics, teacher contribution tables, GSA by grade level, etc.).
+// This helper pages through with `.range()` until a page comes back short,
+// so callers always get every row regardless of table size.
+const PAGE_SIZE = 1000;
+const fetchAllRows = async (table, build = q => q) => {
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await build(supabase.from(table).select("*")).range(from, from + PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { data: all, error: null };
+};
+
 const GRADE_LEVELS = [7, 8, 9, 10, 11, 12];
 
 // ⚠️ SY 2026–2027 ONLY. The startDay/endDay values below are this app's
@@ -139,19 +162,21 @@ const attendanceEngine = {
   }
 };
 
-// Design tokens — harmonized with src/index.css / src/App.css (green & slate
-// design system, palette named after Mint/Sage/Fern/Emerald/Jade/Forest).
+// Design tokens — harmonized with src/index.css / src/App.css (Space Gray,
+// Rich Emerald & Collegiate Accent system).
 // Kept as plain hex (not var(--...)) on purpose: several call sites append
 // an alpha suffix directly to these strings (e.g. T.green3+"22"), which only
 // works with literal hex colors, not CSS custom properties.
 const T = {
-  bg:"#f8fafc", bgCard:"#ffffff", bgPanel:"#EEF6EC",
-  green1:"#1F4638", green2:"#2F6B4C", green3:"#3E8A63",
-  green4:"#5CA37D", greenLight:"#8FC49A",
+  bg:"#f8fafc", bgCard:"#ffffff", bgPanel:"#f1f5f9",
+  spaceGray:"#0f172a", spaceGraySurface:"#1e293b",
+  green1:"#064e3b", green2:"#047857", green3:"#059669",
+  green4:"#10b981", greenLight:"#6ee7b7",
   yellow:"#f59e0b", yellowDark:"#d97706",
-  blue:"#2563eb", red:"#ef4444",
+  blue:"#2563eb", red:"#e11d48",
+  purple:"#7c3aed",
   white:"#ffffff", gray:"#94a3b8",
-  border:"#cbd5e150", text:"#0f172a", textMuted:"#475569",
+  border:"#e2e8f0", text:"#0f172a", textMuted:"#64748b",
 };
 
 const css = `
@@ -544,7 +569,7 @@ const Spinner = () => (
 
 const SchoolHeader = ({ small=false }) => (
   <div style={{padding:small?"10px 12px":"20px 16px",
-    background:"linear-gradient(160deg,#101F19 0%,#1F4638 30%,#2F6B4C 65%,#17332A 100%)",
+    background:"linear-gradient(150deg,#071018 0%,#0f172a 24%,#064e3b 68%,#059669 100%)",
     borderBottom:`4px solid ${T.yellow}`,boxShadow:"var(--shadow-lg)",
     position:"relative",overflow:"hidden"}}>
     <div style={{position:"absolute",inset:0,opacity:0.04,
@@ -556,13 +581,13 @@ const SchoolHeader = ({ small=false }) => (
       gap:12,position:"relative",zIndex:1,marginTop:small?2:6}}>
       <div style={{width:small?44:64,height:small?44:64,borderRadius:"50%",
         border:`3px solid ${T.yellow}`,boxShadow:"0 2px 12px #0006",flexShrink:0,
-        overflow:"hidden",background:"linear-gradient(160deg,#1F4638,#2F6B4C)",
+        overflow:"hidden",background:"linear-gradient(160deg,#064e3b,#059669)",
         display:"flex",alignItems:"center",justifyContent:"center"}}>
         <img src={mcpbahsLogo} alt="MCPBAHS Logo"
           style={{width:"100%",height:"100%",objectFit:"cover"}}/>
       </div>
       <div style={{textAlign:"left"}}>
-        <div style={{fontSize:small?9:11,color:"#A9CB9C",fontWeight:600,letterSpacing:.5,lineHeight:1.5}}>
+        <div style={{fontSize:small?9:11,color:"#6ee7b7",fontWeight:600,letterSpacing:.5,lineHeight:1.5}}>
           Department of Education · Region XI · Division of Davao City
         </div>
         <div style={{fontSize:small?13:17,fontWeight:900,color:"#ffffff",lineHeight:1.2,textShadow:"0 1px 4px #0006"}}>
@@ -571,7 +596,7 @@ const SchoolHeader = ({ small=false }) => (
         <div style={{fontSize:small?13:17,fontWeight:900,color:T.yellow,lineHeight:1.2,textShadow:"0 1px 4px #0006"}}>
           Agricultural High School
         </div>
-        <div style={{fontSize:small?9:11,color:"#A9CB9C",marginTop:3,display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{fontSize:small?9:11,color:"#6ee7b7",marginTop:3,display:"flex",gap:8,alignItems:"center"}}>
           <span>School ID: 304342</span>
           <span style={{color:T.yellow}}>·</span>
           <span>S.Y. 2026–2027</span>
@@ -579,7 +604,7 @@ const SchoolHeader = ({ small=false }) => (
       </div>
     </div>
     <div style={{position:"absolute",bottom:0,left:0,right:0,height:small?3:5,
-      background:"linear-gradient(90deg,#1F4638,#5CA37D,#f5c800,#5CA37D,#1F4638)",opacity:0.7}}/>
+      background:"linear-gradient(90deg,#064e3b,#10b981,#f5c800,#10b981,#064e3b)",opacity:0.8}}/>
   </div>
 );
 
@@ -616,34 +641,142 @@ const AgriansBranding = () => (
 );
 
 const TopBar = ({ name, sub, onLogout }) => (
-  <div style={{background:T.bgCard,padding:"10px 16px",display:"flex",
+  <div style={{background:T.bgCard,padding:"10px 18px",display:"flex",
     justifyContent:"space-between",alignItems:"center",
-    borderBottom:"1px solid var(--border-subtle)",boxShadow:"var(--shadow-sm)"}}>
-    <div>
-      <div style={{fontWeight:700,fontSize:14,color:T.green1}}>{name}</div>
-      <div style={{fontSize:11,color:T.textMuted}}>{sub}</div>
+    borderBottom:"1px solid var(--border-subtle)",boxShadow:"var(--shadow-sm)",
+    backdropFilter:"blur(12px)"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{width:34,height:34,borderRadius:"var(--radius-full)",
+        background:"linear-gradient(135deg, #0f172a, #334155)",
+        color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",
+        fontWeight:800,fontSize:14,border:"1px solid var(--border-subtle)",
+        boxShadow:"var(--shadow-xs)"}}>
+        {name.includes("Admin") ? "🛡️" : name.includes("Teacher") ? "👨‍🏫" : "🎓"}
+      </div>
+      <div>
+        <div style={{fontWeight:800,fontSize:13.5,color:T.text,letterSpacing:"-0.01em"}}>{name}</div>
+        <div style={{fontSize:11,color:T.textMuted,fontWeight:500}}>{sub}</div>
+      </div>
     </div>
-    <Btn onClick={onLogout} color={T.red} style={{padding:"6px 12px",fontSize:12}}>Logout</Btn>
+    <Btn onClick={onLogout} color={T.red} style={{padding:"6px 14px",fontSize:12,fontWeight:700}}>Logout</Btn>
   </div>
 );
 
-const BottomNav = ({ tabs, active, setActive }) => (
-  <div style={{position:"fixed",bottom:0,left:0,right:0,background:T.bgCard,
-    borderTop:"1px solid var(--border-subtle)",display:"flex",zIndex:100,boxShadow:"0 -4px 16px rgba(15,23,42,0.06)",
-    backdropFilter:"blur(12px)"}}>
-    {tabs.map(([ic,lb,tb])=>(
-      <button key={tb} className="btn-ghost" onClick={()=>setActive(tb)} style={{
-        flex:1,padding:"10px 2px",background:"transparent",border:"none",cursor:"pointer",
-        borderRadius:0,color:active===tb?T.green2:T.gray,display:"flex",flexDirection:"column",
-        alignItems:"center",fontSize:9,fontWeight:active===tb?700:400,gap:2,
-        transition:"color .2s var(--ease-in-out), border-color .2s var(--ease-in-out)",
-        borderTop:active===tb?`2px solid ${T.green3}`:"2px solid transparent"}}>
-        <span style={{fontSize:18,transition:"transform .2s var(--ease-out-back)",
-          transform:active===tb?"scale(1.1)":"scale(1)"}}>{ic}</span>{lb}
-      </button>
-    ))}
-  </div>
-);
+const ADMIN_MODULES = [
+  {
+    id: "analytics",
+    label: "Analytics & Reports",
+    icon: "📊",
+    tabs: [
+      { id: "overview", label: "Overview", icon: "🏫" },
+      { id: "statistics", label: "School Stats", icon: "📈" },
+      { id: "forms", label: "DepEd Forms", icon: "📄" },
+    ]
+  },
+  {
+    id: "roster",
+    label: "Academic Roster",
+    icon: "👥",
+    tabs: [
+      { id: "students", label: "Students", icon: "🎓" },
+      { id: "teachers", label: "Teachers", icon: "👨‍🏫" },
+      { id: "sections", label: "Sections", icon: "🏫" },
+      { id: "subjects", label: "Subjects & Load", icon: "📚" },
+    ]
+  },
+  {
+    id: "records",
+    label: "Records & Life",
+    icon: "📝",
+    tabs: [
+      { id: "grades", label: "Grades", icon: "📝" },
+      { id: "calendar", label: "Calendar", icon: "📅" },
+      { id: "appointments", label: "Appointments", icon: "🗓️" },
+      { id: "discipline", label: "Discipline", icon: "🚨" },
+    ]
+  },
+  {
+    id: "system",
+    label: "System Settings",
+    icon: "⚙️",
+    tabs: [
+      { id: "settings", label: "Settings & Access", icon: "⚙️" },
+    ]
+  }
+];
+
+const AdminNavHub = ({ activeTab, onSelectTab }) => {
+  const activeModule = ADMIN_MODULES.find(m => m.tabs.some(t => t.id === activeTab)) || ADMIN_MODULES[0];
+
+  return (
+    <div className="admin-hub-bar">
+      <div className="admin-hub-inner">
+        <div className="admin-module-selector">
+          {ADMIN_MODULES.map(m => {
+            const isActiveModule = m.id === activeModule.id;
+            return (
+              <button
+                key={m.id}
+                className={`admin-module-btn ${isActiveModule ? "active" : ""}`}
+                onClick={() => {
+                  if (!isActiveModule) onSelectTab(m.tabs[0].id);
+                }}
+              >
+                <span>{m.icon}</span>
+                <span>{m.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="admin-subtab-strip">
+          {activeModule.tabs.map(t => {
+            const isActiveTab = t.id === activeTab;
+            return (
+              <button
+                key={t.id}
+                className={`admin-subtab-pill ${isActiveTab ? "active" : ""}`}
+                onClick={() => onSelectTab(t.id)}
+              >
+                <span>{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BottomNav = ({ tabs, active, setActive }) => {
+  const isScrollable = tabs.length > 6;
+  return (
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:T.bgCard,
+      borderTop:"1px solid var(--border-subtle)",display:"flex",zIndex:100,boxShadow:"0 -4px 16px rgba(15,23,42,0.06)",
+      backdropFilter:"blur(12px)",
+      overflowX: isScrollable ? "auto" : "visible",
+      WebkitOverflowScrolling: "touch",
+      scrollbarWidth: "none"}}>
+      {tabs.map(([ic,lb,tb])=>{
+        const isActive = active === tb;
+        return (
+          <button key={tb} className="btn-ghost" onClick={()=>setActive(tb)} style={{
+            flex: isScrollable ? "0 0 72px" : 1,
+            minWidth: isScrollable ? 68 : "auto",
+            padding:"9px 2px",background:"transparent",border:"none",cursor:"pointer",
+            borderRadius:0,color:isActive?T.green3:T.gray,display:"flex",flexDirection:"column",
+            alignItems:"center",fontSize:9.5,fontWeight:isActive?800:400,gap:2,
+            transition:"color .2s var(--ease-in-out), border-color .2s var(--ease-in-out)",
+            borderTop:isActive?`3px solid ${T.green3}`:"3px solid transparent"}}>
+            <span style={{fontSize:18,transition:"transform .2s var(--ease-out-back)",
+              transform:isActive?"scale(1.15)":"scale(1)"}}>{ic}</span>
+            <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:64}}>{lb}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 const ResetPasswordModal = ({ user, onConfirm, onClose }) => {
   const [newPass,setNewPass]=useState("");
@@ -1229,198 +1362,130 @@ const EditSubjectModal = ({ subject, isMapeh, onSave, onClose, qualifications=[]
   );
 };
 
-const SectionGroup = ({ sectionName, adviserName, total, males, females, qualStats, children }) => {
-  const [open,setOpen]=useState(true);
+const SectionGroup = ({ sectionName, adviserName, total, males, females, qualStats, children, defaultOpen=false }) => {
+  const [open,setOpen]=useState(defaultOpen);
+
+  useEffect(()=>{
+    setOpen(defaultOpen);
+  },[defaultOpen]);
+
   return (
-    <div style={{marginBottom:12}}>
-      <div onClick={()=>setOpen(p=>!p)} style={{cursor:"pointer",fontSize:12,fontWeight:700,
-        color:T.green2,background:"#EEF6EC",padding:"6px 10px",borderRadius:6,
-        borderLeft:`3px solid ${T.green3}`,marginBottom:6,display:"flex",
-        justifyContent:"space-between",alignItems:"center",gap:8}}>
-        <span style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:10}}>{open?"▼":"▶"}</span>
-          <span>Section: {sectionName}</span>
-        </span>
-        {adviserName&&<span style={{fontSize:10,color:T.textMuted,fontWeight:400}}>Adviser: {adviserName}</span>}
-      </div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:open?8:0,paddingLeft:2}}>
-        <span style={{fontSize:10,fontWeight:700,color:T.text,background:"#fff",
-          border:"1px solid #C9E0BE",borderRadius:10,padding:"2px 8px"}}>
-          👥 Total: {total}
-        </span>
-        <span style={{fontSize:10,fontWeight:700,color:T.blue,background:"#fff",
-          border:"1px solid #b3c6e8",borderRadius:10,padding:"2px 8px"}}>
-          ♂ Male: {males}
-        </span>
-        <span style={{fontSize:10,fontWeight:700,color:"#c2185b",background:"#fff",
-          border:"1px solid #eab8cc",borderRadius:10,padding:"2px 8px"}}>
-          ♀ Female: {females}
-        </span>
-        {qualStats.map(g=>(
-          <span key={g.name} style={{fontSize:10,fontWeight:700,color:"#7b1fa2",background:"#fff",
-            border:"1px solid #d8b8d8",borderRadius:10,padding:"2px 8px"}}>
-            🎯 {g.name}: {g.count}
+    <div style={{marginBottom:10}}>
+      <div className="section-accordion-head" onClick={()=>setOpen(p=>!p)}>
+        <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+          <span style={{fontSize:11,color:T.textMuted,display:"inline-block",
+            transform:open?"rotate(90deg)":"none",transition:"transform .18s ease"}}>
+            ▶
           </span>
-        ))}
+          <span style={{fontWeight:800,fontSize:13,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {sectionName}
+          </span>
+          {adviserName&&(
+            <span style={{fontSize:11,color:T.textMuted,fontWeight:500,display:"none",sm:"inline"}}>
+              · Adv. {adviserName}
+            </span>
+          )}
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",flexShrink:0}}>
+          <span style={{fontSize:10,fontWeight:800,color:T.text,background:"#fff",
+            border:"1px solid var(--border-default)",borderRadius:12,padding:"2px 8px"}}>
+            👥 {total}
+          </span>
+          <span style={{fontSize:10,fontWeight:800,color:T.blue,background:"var(--accent-blue-bg)",
+            border:"1px solid rgba(37,99,235,0.25)",borderRadius:12,padding:"2px 8px"}}>
+            ♂ {males}
+          </span>
+          <span style={{fontSize:10,fontWeight:800,color:T.red,background:"var(--accent-red-bg)",
+            border:"1px solid rgba(225,29,72,0.25)",borderRadius:12,padding:"2px 8px"}}>
+            ♀ {females}
+          </span>
+          {qualStats.map(g=>(
+            <span key={g.name} style={{fontSize:10,fontWeight:800,color:T.purple,
+              background:"var(--accent-purple-bg)",border:"1px solid rgba(124,58,237,0.25)",
+              borderRadius:12,padding:"2px 8px"}}>
+              🎯 {g.name}: {g.count}
+            </span>
+          ))}
+        </div>
       </div>
-      {open&&children}
+      {open&&(
+        <div style={{paddingLeft:4,marginBottom:6}}>
+          {children}
+        </div>
+      )}
     </div>
   );
 };
 
-const StudentListGrouped = ({ students, sections, teachers, showActions, onDelete, onReset, onReassign, onEdit, qualifications=[] }) => (
-  <div>
-    {GRADE_LEVELS.map(gl=>{
-      const gradeSections=sections.filter(s=>s.grade_level===gl);
-      const gradeStudents=students.filter(s=>s.grade_level===gl);
-      if (!gradeStudents.length) return null;
-      const isTveGrade=gl>=8&&gl<=10; // TVE qualification only applies to Grades 8-10
-      return (
-        <div key={gl} style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:800,color:T.white,
-            background:T.green1,padding:"6px 12px",borderRadius:8,marginBottom:8}}>
-            Grade {gl}
-          </div>
-          {gradeSections.map(sec=>{
-            const secStudents=gradeStudents.filter(s=>s.section_id===sec.id);
-            if (!secStudents.length) return null;
-            const adviser=teachers.find(t=>t.id===sec.adviser_id);
-
-            // Renders the Male / Female sub-groups for a given list of students.
-            const renderGenderGroups=list=>{
-              const males=list.filter(s=>s.gender==="Male");
-              const females=list.filter(s=>s.gender==="Female");
-              return (
-                <>
-                  {males.length>0&&(
-                    <div>
-                      <div style={{fontSize:11,color:T.blue,fontWeight:700,padding:"2px 8px",
-                        marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
-                        <span>♂</span><span>Male ({males.length})</span>
-                      </div>
-                      {males.map(s=><StudentCard key={s.id} student={s} sections={sections}
-                        showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>)}
-                    </div>
-                  )}
-                  {females.length>0&&(
-                    <div style={{marginTop:4}}>
-                      <div style={{fontSize:11,color:"#c2185b",fontWeight:700,padding:"2px 8px",
-                        marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
-                        <span>♀</span><span>Female ({females.length})</span>
-                      </div>
-                      {females.map(s=><StudentCard key={s.id} student={s} sections={sections}
-                        showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>)}
-                    </div>
-                  )}
-                </>
-              );
-            };
-
-            // For Grades 8-10, break the section's students down per TVE qualification
-            // (per admin-managed list), so admin can see exactly who belongs to which
-            // qualification within this section. Other grades show gender groups directly.
-            const qualGroups=isTveGrade
-              ?[...qualifications,
-                ...(secStudents.some(s=>!s.tve_qualification||!qualifications.includes(s.tve_qualification))
-                  ?["Unassigned / Other"]:[])
-                ].map(qName=>({
-                  name:qName,
-                  list:qName==="Unassigned / Other"
-                    ?secStudents.filter(s=>!s.tve_qualification||!qualifications.includes(s.tve_qualification))
-                    :secStudents.filter(s=>s.tve_qualification===qName),
-                })).filter(g=>g.list.length>0)
-              :null;
-
-            const males=secStudents.filter(s=>s.gender==="Male").length;
-            const females=secStudents.filter(s=>s.gender==="Female").length;
-            const qualStats=isTveGrade
-              ?qualifications.map(qName=>({
-                  name:qName,
-                  count:secStudents.filter(s=>s.tve_qualification===qName).length,
-                })).filter(g=>g.count>0)
-              :[];
-
-            return (
-              <SectionGroup key={sec.id} sectionName={sec.name} adviserName={adviser?.name}
-                total={secStudents.length} males={males} females={females} qualStats={qualStats}>
-                {qualGroups?(
-                  qualGroups.map(g=>(
-                    <div key={g.name} style={{marginBottom:10,marginLeft:4,paddingLeft:8,
-                      borderLeft:"2px solid #A9CB9C"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#7b1fa2",background:"#f3e5f5",
-                        padding:"3px 9px",borderRadius:6,marginBottom:6,display:"inline-block"}}>
-                        🎯 {g.name} ({g.list.length})
-                      </div>
-                      {renderGenderGroups(g.list)}
-                    </div>
-                  ))
-                ):renderGenderGroups(secStudents)}
-              </SectionGroup>
-            );
-          })}
-          {gradeStudents.filter(s=>!s.section_id).length>0&&(
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:12,color:T.gray,padding:"2px 8px",marginBottom:4}}>
-                No Section Assigned
-              </div>
-              {gradeStudents.filter(s=>!s.section_id).map(s=>
-                <StudentCard key={s.id} student={s} sections={sections}
-                  showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    })}
-  </div>
-);
-
 const StudentCard = ({ student:s, sections, showActions, onDelete, onReset, onReassign, onEdit }) => {
   const [expand,setExpand]=useState(false);
   const sec=sections.find(x=>x.id===s.section_id);
+  const initials=(s.name||"?").split(" ").map(w=>w[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
+
   return (
-    <Card style={{marginBottom:6,padding:"8px 12px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{flex:1}} onClick={()=>setExpand(p=>!p)}>
-          <div style={{fontWeight:700,fontSize:13,color:T.text}}>{studentDisplay(s)}</div>
-          <div style={{fontSize:11,color:T.textMuted,display:"flex",gap:8,flexWrap:"wrap"}}>
-            <span>LRN: {s.lrn}</span><span>Gr.{s.grade_level}</span>
-            {sec&&<span>{sec.name}</span>}
-            <Badge text={s.gender} color={s.gender==="Male"?T.blue:"#c2185b"}/>
-            {s.tve_qualification&&<Badge text={s.tve_qualification} color="#7b1fa2"/>}
+    <div className={`student-row-modern ${expand?"is-expanded":""}`}>
+      <div className="student-row-header" onClick={()=>setExpand(p=>!p)}>
+        <div className={`student-avatar ${s.gender==="Male"?"male":"female"}`}>
+          {initials||"👤"}
+        </div>
+        <div className="student-info-main">
+          <div className="student-name-line">
+            <span>{studentDisplay(s)}</span>
+            <span style={{fontSize:10.5,fontWeight:600,color:T.textMuted}}>LRN: {s.lrn}</span>
+          </div>
+          <div className="student-meta-chips">
+            <span style={{background:T.bgPanel,padding:"1px 6px",borderRadius:4,fontWeight:600,color:T.spaceGraySurface}}>
+              Gr.{s.grade_level} {sec?`· ${sec.name}`:"· Unassigned"}
+            </span>
+            <Badge text={s.gender} color={s.gender==="Male"?T.blue:T.red}/>
+            {s.tve_qualification&&<Badge text={s.tve_qualification} color={T.purple}/>}
             {s.enrollment_status&&s.enrollment_status!=="Active"&&
               <Badge text={s.enrollment_status} color={T.red}/>}
           </div>
         </div>
-        {(showActions||onEdit)&&(
-          <div style={{display:"flex",gap:4,flexShrink:0}}>
-            {onEdit&&(
-              <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
-                onClick={()=>onEdit(s)}>✏️</Btn>
-            )}
-            {showActions&&<>
-              <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
-                onClick={()=>onReset({userId:s.id,name:s.name,role:"student"})}>🔑</Btn>
-              <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
-                onClick={()=>onDelete(s.id)}>🗑️</Btn>
-            </>}
-          </div>
-        )}
+
+        <div style={{display:"flex",gap:4,flexShrink:0,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+          {onEdit&&(
+            <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
+              onClick={()=>onEdit(s)} title="Edit Student">✏️</Btn>
+          )}
+          {showActions&&<>
+            <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
+              onClick={()=>onReset({userId:s.id,name:s.name,role:"student"})} title="Reset Password">🔑</Btn>
+            <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
+              onClick={()=>onDelete(s.id)} title="Delete Student">🗑️</Btn>
+          </>}
+          <button onClick={()=>setExpand(p=>!p)} style={{
+            background:"transparent",border:"none",cursor:"pointer",padding:"4px 6px",
+            fontSize:11,color:T.textMuted,transform:expand?"rotate(180deg)":"none",
+            transition:"transform .18s ease"}} title={expand?"Collapse":"Expand"}>
+            ▼
+          </button>
+        </div>
       </div>
+
       {expand&&(
-        <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #E3EEDD"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11}}>
-            {[["Birthday",s.birthday||"—"],["Address",s.address||"—"],["Email",s.email||"—"]].map(([k,v])=>(
-              <div key={k}><span style={{color:T.textMuted}}>{k}: </span>
-                <span style={{color:T.text}}>{v}</span></div>
-            ))}
+        <div className="student-drawer-panel">
+          <div className="student-drawer-grid">
+            <div className="student-drawer-item">
+              <span>Birthday</span>
+              <strong>{s.birthday||"—"}</strong>
+            </div>
+            <div className="student-drawer-item">
+              <span>Address</span>
+              <strong>{s.address||"—"}</strong>
+            </div>
+            <div className="student-drawer-item">
+              <span>Email</span>
+              <strong>{s.email||"—"}</strong>
+            </div>
           </div>
           {onReassign&&(
-            <div style={{marginTop:8}}>
-              <label style={{fontSize:11,color:T.textMuted,display:"block",marginBottom:4}}>
+            <div style={{marginTop:9,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <label style={{fontSize:11,color:T.textMuted,fontWeight:700,flexShrink:0}}>
                 Reassign Section:
               </label>
-              <select value={s.section_id||""} style={{fontSize:12,padding:"5px 8px"}}
+              <select value={s.section_id||""} style={{fontSize:12,padding:"5px 8px",maxWidth:220}}
                 onChange={e=>onReassign(s.id,e.target.value)}>
                 <option value="">-- No Section --</option>
                 {sections.filter(x=>x.grade_level===s.grade_level).map(x=>(
@@ -1431,7 +1496,276 @@ const StudentCard = ({ student:s, sections, showActions, onDelete, onReset, onRe
           )}
         </div>
       )}
-    </Card>
+    </div>
+  );
+};
+
+const StudentListGrouped = ({ students, sections, teachers, showActions, onDelete, onReset, onReassign, onEdit, qualifications=[], defaultGrade=null }) => {
+  const [selectedGrade, setSelectedGrade] = useState(defaultGrade ? String(defaultGrade) : "all");
+  const [selectedSection, setSelectedSection] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [genderFilter, setGenderFilter] = useState("all");
+  const [expandAll, setExpandAll] = useState(selectedGrade !== "all");
+
+  const effectiveGrade = defaultGrade ? String(defaultGrade) : selectedGrade;
+
+  // Filter students based on all active criteria
+  const filteredStudents = students.filter(s => {
+    if (effectiveGrade !== "all" && s.grade_level !== parseInt(effectiveGrade)) return false;
+    if (selectedSection !== "all" && (s.section_id || "") !== selectedSection) return false;
+    if (genderFilter !== "all" && s.gender !== genderFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchName = (s.name || "").toLowerCase().includes(q);
+      const matchLrn = (s.lrn || "").toLowerCase().includes(q);
+      if (!matchName && !matchLrn) return false;
+    }
+    return true;
+  });
+
+  const availableSections = sections.filter(sec =>
+    effectiveGrade === "all" ? true : sec.grade_level === parseInt(effectiveGrade)
+  );
+
+  const activeGradeLevels = effectiveGrade === "all"
+    ? GRADE_LEVELS.filter(gl => filteredStudents.some(s => s.grade_level === gl))
+    : [parseInt(effectiveGrade)];
+
+  return (
+    <div style={{marginTop:12}}>
+      {/* Strategic Roster Toolbar */}
+      <div className="roster-toolbar">
+        <div className="roster-toolbar-top">
+          {/* Live Search */}
+          <div className="roster-search-box">
+            <span className="roster-search-icon">🔍</span>
+            <input
+              type="text"
+              className="roster-search-input"
+              placeholder="Search learner by name or LRN..."
+              value={searchQuery}
+              onChange={e=>setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="filter-action-group">
+            {/* Section Filter */}
+            <select
+              value={selectedSection}
+              onChange={e=>setSelectedSection(e.target.value)}
+              style={{fontSize:11.5,padding:"6px 10px",width:"auto",borderRadius:"var(--radius-md)"}}
+            >
+              <option value="all">All Sections ({availableSections.length})</option>
+              {availableSections.map(sec=>(
+                <option key={sec.id} value={sec.id}>Gr.{sec.grade_level} — {sec.name}</option>
+              ))}
+            </select>
+
+            {/* Gender Filter */}
+            <div style={{display:"flex",borderRadius:"var(--radius-md)",overflow:"hidden",border:"1px solid var(--border-default)"}}>
+              {["all","Male","Female"].map(g=>(
+                <button
+                  key={g}
+                  onClick={()=>setGenderFilter(g)}
+                  style={{
+                    padding:"5px 9px",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                    background:genderFilter===g?(g==="Male"?T.blue:g==="Female"?T.red:T.spaceGray):"var(--bg-surface)",
+                    color:genderFilter===g?"#fff":T.textSecondary
+                  }}
+                >
+                  {g==="all"?"All":g==="Male"?"♂ M":"♀ F"}
+                </button>
+              ))}
+            </div>
+
+            {/* Master Expand/Collapse Toggle */}
+            <button
+              onClick={()=>setExpandAll(p=>!p)}
+              style={{
+                padding:"6px 11px",fontSize:11,fontWeight:700,borderRadius:"var(--radius-md)",
+                border:"1px solid var(--border-default)",background:"var(--bg-surface)",
+                color:T.textSecondary,cursor:"pointer",display:"flex",alignItems:"center",gap:5
+              }}
+              title="Toggle all section accordions"
+            >
+              <span>{expandAll?"📁 Collapse All":"📂 Expand All"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Grade Level Selector Pills */}
+        {!defaultGrade&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",paddingTop:4,borderTop:"1px solid var(--border-subtle)"}}>
+            <span style={{fontSize:10.5,fontWeight:800,color:T.textMuted,letterSpacing:".05em",textTransform:"uppercase"}}>
+              Grade:
+            </span>
+            <div className="grade-pill-group">
+              <button
+                className={`grade-pill ${selectedGrade==="all"?"active":""}`}
+                onClick={()=>{setSelectedGrade("all");setSelectedSection("all");}}
+              >
+                All Grades ({students.length})
+              </button>
+              {GRADE_LEVELS.map(gl=>{
+                const count = students.filter(s=>s.grade_level===gl).length;
+                return (
+                  <button
+                    key={gl}
+                    className={`grade-pill ${selectedGrade===String(gl)?"active":""}`}
+                    onClick={()=>{setSelectedGrade(String(gl));setSelectedSection("all");}}
+                  >
+                    Gr. {gl} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Filter Summary Ribbon */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:T.textMuted,paddingTop:2}}>
+          <div>
+            Showing <strong style={{color:T.green3}}>{filteredStudents.length}</strong> of {students.length} learners
+            {searchQuery&&<span> matching "<strong>{searchQuery}</strong>"</span>}
+            {effectiveGrade!=="all"&&<span> in <strong>Grade {effectiveGrade}</strong></span>}
+          </div>
+          {(searchQuery||genderFilter!=="all"||selectedSection!=="all"||(selectedGrade!=="all"&&!defaultGrade))&&(
+            <button
+              onClick={()=>{setSearchQuery("");setGenderFilter("all");setSelectedSection("all");if(!defaultGrade)setSelectedGrade("all");}}
+              style={{background:"none",border:"none",color:T.red,fontSize:10.5,fontWeight:700,cursor:"pointer"}}
+            >
+              Reset Filters ↺
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Roster Sections */}
+      {filteredStudents.length===0?(
+        <Card style={{textAlign:"center",padding:24,color:T.gray}}>
+          <div style={{fontSize:24,marginBottom:6}}>🔍</div>
+          <div style={{fontWeight:700,fontSize:13,color:T.text}}>No learners found</div>
+          <div style={{fontSize:11,marginTop:4}}>Try changing your search term or grade/section filters.</div>
+        </Card>
+      ):(
+        activeGradeLevels.map(gl=>{
+          const gradeSections=sections.filter(s=>s.grade_level===gl);
+          const gradeStudents=filteredStudents.filter(s=>s.grade_level===gl);
+          if (!gradeStudents.length) return null;
+          const isTveGrade=gl>=8&&gl<=10;
+
+          return (
+            <div key={gl} style={{marginBottom:18}}>
+              <div style={{
+                display:"flex",justifyContent:"space-between",alignItems:"center",
+                background:"linear-gradient(90deg, #0f172a, #1e293b)",color:"#fff",
+                padding:"7px 14px",borderRadius:"var(--radius-md)",marginBottom:10,
+                boxShadow:"var(--shadow-xs)"
+              }}>
+                <div style={{fontSize:13,fontWeight:800,display:"flex",alignItems:"center",gap:8}}>
+                  <span>Grade {gl}</span>
+                  <span style={{fontSize:10,opacity:0.8,background:"rgba(255,255,255,0.15)",padding:"1px 7px",borderRadius:10}}>
+                    {gradeStudents.length} learners
+                  </span>
+                </div>
+                <div style={{fontSize:11,opacity:0.8}}>
+                  {gradeSections.length} section{gradeSections.length===1?"":"s"}
+                </div>
+              </div>
+
+              {gradeSections.map(sec=>{
+                const secStudents=gradeStudents.filter(s=>s.section_id===sec.id);
+                if (!secStudents.length) return null;
+                const adviser=teachers.find(t=>t.id===sec.adviser_id);
+
+                const renderGenderGroups=list=>{
+                  const males=list.filter(s=>s.gender==="Male");
+                  const females=list.filter(s=>s.gender==="Female");
+                  return (
+                    <>
+                      {males.length>0&&(
+                        <div style={{marginBottom:6}}>
+                          <div style={{fontSize:10.5,color:T.blue,fontWeight:800,padding:"2px 4px",
+                            marginBottom:3,display:"flex",alignItems:"center",gap:5}}>
+                            <span>♂ Male ({males.length})</span>
+                          </div>
+                          {males.map(s=><StudentCard key={s.id} student={s} sections={sections}
+                            showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>)}
+                        </div>
+                      )}
+                      {females.length>0&&(
+                        <div style={{marginBottom:6}}>
+                          <div style={{fontSize:10.5,color:T.red,fontWeight:800,padding:"2px 4px",
+                            marginBottom:3,display:"flex",alignItems:"center",gap:5}}>
+                            <span>♀ Female ({females.length})</span>
+                          </div>
+                          {females.map(s=><StudentCard key={s.id} student={s} sections={sections}
+                            showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>)}
+                        </div>
+                      )}
+                    </>
+                  );
+                };
+
+                const qualGroups=isTveGrade
+                  ?[...qualifications,
+                    ...(secStudents.some(s=>!s.tve_qualification||!qualifications.includes(s.tve_qualification))
+                      ?["Unassigned / Other"]:[])
+                    ].map(qName=>({
+                      name:qName,
+                      list:qName==="Unassigned / Other"
+                        ?secStudents.filter(s=>!s.tve_qualification||!qualifications.includes(s.tve_qualification))
+                        :secStudents.filter(s=>s.tve_qualification===qName),
+                    })).filter(g=>g.list.length>0)
+                  :null;
+
+                const males=secStudents.filter(s=>s.gender==="Male").length;
+                const females=secStudents.filter(s=>s.gender==="Female").length;
+                const qualStats=isTveGrade
+                  ?qualifications.map(qName=>({
+                      name:qName,
+                      count:secStudents.filter(s=>s.tve_qualification===qName).length,
+                    })).filter(g=>g.count>0)
+                  :[];
+
+                return (
+                  <SectionGroup key={sec.id} sectionName={sec.name} adviserName={adviser?.name}
+                    total={secStudents.length} males={males} females={females} qualStats={qualStats}
+                    defaultOpen={expandAll}>
+                    {qualGroups?(
+                      qualGroups.map(g=>(
+                        <div key={g.name} style={{marginBottom:10,marginLeft:2,paddingLeft:8,
+                          borderLeft:"2px solid var(--accent-purple)"}}>
+                          <div style={{fontSize:10.5,fontWeight:800,color:T.purple,background:"var(--accent-purple-bg)",
+                            padding:"2px 8px",borderRadius:6,marginBottom:5,display:"inline-block"}}>
+                            🎯 {g.name} ({g.list.length})
+                          </div>
+                          {renderGenderGroups(g.list)}
+                        </div>
+                      ))
+                    ):renderGenderGroups(secStudents)}
+                  </SectionGroup>
+                );
+              })}
+
+              {/* Unassigned section learners */}
+              {gradeStudents.filter(s=>!s.section_id).length>0&&(
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:11.5,fontWeight:700,color:T.red,padding:"4px 8px",marginBottom:4,
+                    background:"var(--accent-red-bg)",borderRadius:6,display:"inline-block"}}>
+                    ⚠️ No Section Assigned ({gradeStudents.filter(s=>!s.section_id).length})
+                  </div>
+                  {gradeStudents.filter(s=>!s.section_id).map(s=>
+                    <StudentCard key={s.id} student={s} sections={sections}
+                      showActions={showActions} onDelete={onDelete} onReset={onReset} onReassign={onReassign} onEdit={onEdit}/>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
   );
 };
 
@@ -4390,17 +4724,35 @@ const AdminDashboard = ({ profile, onLogout }) => {
   const [nGrade,setNGrade]=useState({student_id:"",subject_id:"",term:1,grade:""});
   const [nSection,setNSection]=useState({name:"",grade_level:7,adviser_id:""});
 
+  // Strategic view & filter states
+  const [subjectSubview, setSubjectSubview] = useState("roster"); // "roster" | "matrix" | "summary"
+  const [subjectRosterGrade, setSubjectRosterGrade] = useState("all");
+  const [sectionFilterGrade, setSectionFilterGrade] = useState("all");
+  const [overviewEncodingGrade, setOverviewEncodingGrade] = useState("all");
+  const [gradeFilterGrade, setGradeFilterGrade] = useState("all");
+  const [gradeFilterTerm, setGradeFilterTerm] = useState("all");
+  const [gradeSearchStudent, setGradeSearchStudent] = useState("");
+  const [showAddGrade, setShowAddGrade] = useState(false);
+  const [addGradeStudentGrade, setAddGradeStudentGrade] = useState("all");
+  const [gradeDisplayLimit, setGradeDisplayLimit] = useState(40);
+  const [teacherSearch, setTeacherSearch] = useState("");
+  const [showAddTeacher, setShowAddTeacher] = useState(false);
+
   const notify=m=>{setToast(m);setTimeout(()=>setToast(""),3000);};
 
   const fetchAll=useCallback(async()=>{
     setLoading(true);
+    // grades, the student roster, subject_assignments, and appointments can
+    // all exceed Supabase's default 1000-row cap on a real campus — these go
+    // through fetchAllRows so a big school never silently loses records (see
+    // fetchAllRows definition up top for why this matters).
     const [sR,tR,subR,asR,gR,aR,secR,calR,settR,qR,holR,laR]=await Promise.all([
-      supabase.from("profiles").select("*").eq("role","student").order("grade_level").order("name"),
+      fetchAllRows("profiles",q=>q.eq("role","student").order("grade_level").order("name")),
       supabase.from("profiles").select("*").eq("role","teacher").order("name"),
       supabase.from("subjects").select("*").order("grade_level"),
-      supabase.from("subject_assignments").select("*"),
-      supabase.from("grades").select("*"),
-      supabase.from("appointments").select("*").order("created_at",{ascending:false}),
+      fetchAllRows("subject_assignments"),
+      fetchAllRows("grades"),
+      fetchAllRows("appointments",q=>q.order("created_at",{ascending:false})),
       supabase.from("sections").select("*").order("grade_level").order("name"),
       supabase.from("school_calendar").select("*").order("year").order("month"),
       supabase.from("app_settings").select("*"),
@@ -4989,6 +5341,7 @@ const AdminDashboard = ({ profile, onLogout }) => {
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}}>
       <SchoolHeader small/>
       <TopBar name="Admin Panel" sub={profile.name} onLogout={onLogout}/>
+      <AdminNavHub activeTab={tab} onSelectTab={setTab}/>
       <Toast msg={toast}/>
       <div className="admin-welcome-wrap">
         <WelcomePanel profile={profile} role="admin" stats={[
@@ -5078,27 +5431,40 @@ const AdminDashboard = ({ profile, onLogout }) => {
               </Card>
             </div>
 
-            <div style={{fontSize:14,fontWeight:700,color:T.green1,margin:"18px 0 10px"}}>
-              📈 Grade Encoding Progress
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"20px 0 12px",flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:14,fontWeight:800,color:T.green1}}>
+                📈 Grade Encoding Progress
+              </div>
+              <div className="grade-pill-group">
+                <button
+                  className={`grade-pill ${overviewEncodingGrade==="all"?"active":""}`}
+                  onClick={()=>setOverviewEncodingGrade("all")}
+                >
+                  All Grades
+                </button>
+                {GRADE_LEVELS.map(gl=>(
+                  <button
+                    key={gl}
+                    className={`grade-pill ${overviewEncodingGrade===String(gl)?"active":""}`}
+                    onClick={()=>setOverviewEncodingGrade(String(gl))}
+                  >
+                    Gr. {gl}
+                  </button>
+                ))}
+              </div>
             </div>
             {sections.length===0
               ?<Card><div style={{textAlign:"center",color:T.gray,padding:16}}>No sections yet.</div></Card>
-              :GRADE_LEVELS.map(gl=>{
-                const glSections=sections.filter(s=>s.grade_level===gl);
-                if (!glSections.length) return null;
-                return (
-                  <div key={gl} style={{marginBottom:12}}>
-                    <div style={{fontSize:12,fontWeight:800,color:T.white,background:T.green1,
-                      padding:"6px 12px",borderRadius:8,marginBottom:8}}>
-                      Grade {gl}
-                    </div>
-                    {glSections.map(sec=>(
+              :(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:10,marginBottom:16}}>
+                  {sections
+                    .filter(s=>overviewEncodingGrade==="all"||s.grade_level===parseInt(overviewEncodingGrade))
+                    .map(sec=>(
                       <EncodingProgressCard key={sec.id}
                         result={computeSectionEncoding(sec,subjects,students,grades)}/>
                     ))}
-                  </div>
-                );
-              })
+                </div>
+              )
             }
 
             <Card style={{padding:12}}>
@@ -5307,70 +5673,153 @@ const AdminDashboard = ({ profile, onLogout }) => {
           </div>
         )}
 
-        {tab==="teachers"&&(
-          <div>
-            <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>👨‍🏫 Manage Teachers</div>
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Teacher</div>
-              <div style={{display:"grid",gap:8,marginBottom:8}}>
-                <input placeholder="Full Name *" value={nTeacher.name}
-                  onChange={e=>setNTeacher(p=>({...p,name:e.target.value}))}/>
-                <input placeholder="Email *" value={nTeacher.email}
-                  onChange={e=>setNTeacher(p=>({...p,email:e.target.value}))}/>
-                <input type="password" placeholder="Password *" value={nTeacher.password}
-                  onChange={e=>setNTeacher(p=>({...p,password:e.target.value}))}/>
+        {tab==="teachers"&&(()=>{
+          const filteredTeachers = teachers.filter(t => {
+            if (!teacherSearch.trim()) return true;
+            const q = teacherSearch.toLowerCase();
+            const matchName = (t.name || "").toLowerCase().includes(q);
+            const matchEmail = (t.email || "").toLowerCase().includes(q);
+            const teacherSubs = subjects.filter(s=>s.teacher_id===t.id).map(s=>s.name.toLowerCase()).join(" ");
+            return matchName || matchEmail || teacherSubs.includes(q);
+          });
+
+          return (
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:16,fontWeight:800,color:T.green1}}>👨‍🏫 Faculty Management</span>
+                  <span style={{fontSize:11,fontWeight:700,background:T.bgPanel,color:T.textMuted,padding:"2px 8px",borderRadius:12,border:`1px solid ${T.borderSubtle}`}}>
+                    {teachers.length} Faculty Members
+                  </span>
+                </div>
+                <button
+                  onClick={()=>setShowAddTeacher(p=>!p)}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:8,
+                    fontSize:12,
+                    fontWeight:700,
+                    background:showAddTeacher ? T.bgPanel : T.green2,
+                    color:showAddTeacher ? T.text : T.white,
+                    border:`1px solid ${showAddTeacher ? T.borderSubtle : "transparent"}`,
+                    cursor:"pointer",
+                    display:"inline-flex",
+                    alignItems:"center",
+                    gap:6
+                  }}
+                >
+                  {showAddTeacher ? "✕ Close Form" : "➕ Add Teacher"}
+                </button>
               </div>
-              <Btn onClick={addTeacher} style={{width:"100%"}}>➕ Add Teacher</Btn>
-            </Card>
-            {teachers.map(t=>(
-              <Card key={t.id} style={{marginBottom:8,padding:"10px 14px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:13,color:T.text}}>{t.name}</div>
-                    <div style={{fontSize:11,color:T.textMuted}}>{t.email}</div>
-                    <div style={{fontSize:11,color:T.textMuted}}>
-                      {(()=>{
-                      const names=new Set([
-                        ...subjects.filter(s=>s.teacher_id===t.id).map(s=>s.name),
-                        ...subjectAssignments.filter(a=>a.teacher_id===t.id).map(a=>subjects.find(s=>s.id===a.subject_id)?.name).filter(Boolean)
-                      ]);
-                      return Array.from(names).join(", ")||"No subjects";
-                    })()}
+
+              {showAddTeacher && (
+                <Card style={{marginBottom:14,borderLeft:`4px solid ${T.green2}`}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Register New Teacher</div>
+                  <div style={{display:"grid",gap:8,marginBottom:8}}>
+                    <input placeholder="Full Name *" value={nTeacher.name}
+                      onChange={e=>setNTeacher(p=>({...p,name:e.target.value}))}/>
+                    <input placeholder="Email *" value={nTeacher.email}
+                      onChange={e=>setNTeacher(p=>({...p,email:e.target.value}))}/>
+                    <input type="password" placeholder="Password *" value={nTeacher.password}
+                      onChange={e=>setNTeacher(p=>({...p,password:e.target.value}))}/>
+                  </div>
+                  <Btn onClick={addTeacher} style={{width:"100%"}}>➕ Create Faculty Account</Btn>
+                </Card>
+              )}
+
+              {/* Teacher Search toolbar */}
+              <div className="roster-toolbar" style={{marginBottom:12}}>
+                <div style={{position:"relative",width:"100%"}}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search faculty by name, email, or subject taught..."
+                    value={teacherSearch}
+                    onChange={e=>setTeacherSearch(e.target.value)}
+                    style={{width:"100%",paddingRight:teacherSearch?28:10}}
+                  />
+                  {teacherSearch && (
+                    <button
+                      onClick={()=>setTeacherSearch("")}
+                      style={{
+                        position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+                        background:"none",border:"none",color:T.textMuted,cursor:"pointer",fontSize:13
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredTeachers.length===0 ? (
+                <Card style={{textAlign:"center",padding:28,color:T.textMuted}}>
+                  <div style={{fontSize:28,marginBottom:6}}>🔍</div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:4}}>No Faculty Found</div>
+                  <div style={{fontSize:12}}>Try searching with a different name or subject keyword.</div>
+                </Card>
+              ) : (
+                filteredTeachers.map(t=>(
+                  <Card key={t.id} style={{marginBottom:8,padding:"12px 14px",transition:"all 0.15s ease"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10,flex:1}}>
+                        <div style={{
+                          width:36,height:36,borderRadius:10,background:T.accentSubtle,
+                          color:T.green2,display:"flex",alignItems:"center",justifyContent:"center",
+                          fontSize:16,flexShrink:0,border:`1px solid ${T.borderSubtle}`
+                        }}>
+                          👨‍🏫
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:14,color:T.text}}>{t.name}</div>
+                          <div style={{fontSize:11,color:T.textMuted}}>{t.email}</div>
+                          <div style={{fontSize:11,color:T.textSecondary,marginTop:3}}>
+                            📚 {(()=>{
+                            const names=new Set([
+                              ...subjects.filter(s=>s.teacher_id===t.id).map(s=>s.name),
+                              ...subjectAssignments.filter(a=>a.teacher_id===t.id).map(a=>subjects.find(s=>s.id===a.subject_id)?.name).filter(Boolean)
+                            ]);
+                            return Array.from(names).join(", ")||"No subjects assigned";
+                          })()}
+                          </div>
+                          <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                            {t.is_curriculum_head&&(
+                              <Badge text={`Curriculum Head Gr.${t.assigned_grade_level}`} color={T.green2}/>
+                            )}
+                            {sections.find(s=>s.adviser_id===t.id)&&(
+                              <Badge text={`Adviser: ${sections.find(s=>s.adviser_id===t.id)?.name}`} color="#7b1fa2"/>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                        <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
+                          onClick={()=>setEditTeacher(t)}>✏️</Btn>
+                        <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
+                          onClick={()=>setResetModal({userId:t.id,name:t.name,role:"teacher"})}>🔑</Btn>
+                        <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
+                          onClick={()=>delTeacher(t.id)}>🗑️</Btn>
+                      </div>
                     </div>
-                    {t.is_curriculum_head&&(
-                      <Badge text={`Curriculum Head Gr.${t.assigned_grade_level}`} color={T.green2}/>
-                    )}
-                    {sections.find(s=>s.adviser_id===t.id)&&(
-                      <Badge text={`Adviser: ${sections.find(s=>s.adviser_id===t.id)?.name}`} color="#7b1fa2"/>
-                    )}
-                  </div>
-                  <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <Btn color={T.green3} style={{padding:"5px 8px",fontSize:11}}
-                      onClick={()=>setEditTeacher(t)}>✏️</Btn>
-                    <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
-                      onClick={()=>setResetModal({userId:t.id,name:t.name,role:"teacher"})}>🔑</Btn>
-                    <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
-                      onClick={()=>delTeacher(t.id)}>🗑️</Btn>
-                  </div>
-                </div>
-                <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #E3EEDD"}}>
-                  <div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>Curriculum Head:</div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    {GRADE_LEVELS.map(gl=>(
-                      <button key={gl} onClick={()=>toggleCurriculumHead(t,gl)} style={{
-                        padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:700,
-                        border:"none",cursor:"pointer",
-                        background:t.is_curriculum_head&&t.assigned_grade_level===gl?T.green3:T.bgPanel,
-                        color:t.is_curriculum_head&&t.assigned_grade_level===gl?T.white:T.textMuted}}>
-                        Gr.{gl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
+                    <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${T.borderSubtle}`}}>
+                      <div style={{fontSize:11,color:T.textMuted,marginBottom:4}}>Curriculum Head Role:</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {GRADE_LEVELS.map(gl=>(
+                          <button key={gl} onClick={()=>toggleCurriculumHead(t,gl)} style={{
+                            padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
+                            border:"none",cursor:"pointer",
+                            background:t.is_curriculum_head&&t.assigned_grade_level===gl?T.green3:T.bgPanel,
+                            color:t.is_curriculum_head&&t.assigned_grade_level===gl?T.white:T.textMuted}}>
+                            Gr.{gl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          );
+        })()}
 
         {tab==="sections"&&(
           <div>
@@ -5394,82 +5843,115 @@ const AdminDashboard = ({ profile, onLogout }) => {
               </div>
               <Btn onClick={addSection} style={{width:"100%"}}>➕ Add Section</Btn>
             </Card>
-            {GRADE_LEVELS.map(gl=>{
+            <div style={{display:"flex",alignItems:"center",gap:8,margin:"16px 0 12px",flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:800,color:T.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>
+                Filter Grade:
+              </span>
+              <div className="grade-pill-group">
+                <button
+                  className={`grade-pill ${sectionFilterGrade==="all"?"active":""}`}
+                  onClick={()=>setSectionFilterGrade("all")}
+                >
+                  All Sections ({sections.length})
+                </button>
+                {GRADE_LEVELS.map(gl=>(
+                  <button
+                    key={gl}
+                    className={`grade-pill ${sectionFilterGrade===String(gl)?"active":""}`}
+                    onClick={()=>setSectionFilterGrade(String(gl))}
+                  >
+                    Grade {gl} ({sections.filter(s=>s.grade_level===gl).length})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {(sectionFilterGrade==="all"?GRADE_LEVELS:[parseInt(sectionFilterGrade)]).map(gl=>{
               const glSecs=sections.filter(s=>s.grade_level===gl);
               if (!glSecs.length) return null;
               return (
-                <div key={gl} style={{marginBottom:12}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.white,background:T.green1,
-                    padding:"4px 10px",borderRadius:6,marginBottom:6}}>Grade {gl}</div>
-                  {glSecs.map(sec=>{
-                    const adviser=teachers.find(t=>t.id===sec.adviser_id);
-                    const secStudents=students.filter(s=>s.section_id===sec.id);
-                    const count=secStudents.length;
-                    const isTveGrade=gl>=8&&gl<=10;
-                    const qualBreakdown=isTveGrade
-                      ?qualifications.map(q=>({
-                          name:q.name,
-                          count:secStudents.filter(s=>s.tve_qualification===q.name).length,
-                        })).filter(g=>g.count>0)
-                      :[];
-                    const unassignedCount=isTveGrade
-                      ?secStudents.filter(s=>!s.tve_qualification||
-                          !qualifications.some(q=>q.name===s.tve_qualification)).length
-                      :0;
-                    return (
-                      <Card key={sec.id} style={{marginBottom:6,padding:"10px 12px"}}>
-                        <div style={{display:"flex",justifyContent:"space-between",
-                          alignItems:"center",marginBottom:6}}>
+                <div key={gl} style={{marginBottom:18}}>
+                  <div style={{
+                    display:"flex",justifyContent:"space-between",alignItems:"center",
+                    background:"linear-gradient(90deg, #0f172a, #1e293b)",color:"#fff",
+                    padding:"6px 12px",borderRadius:"var(--radius-md)",marginBottom:10
+                  }}>
+                    <span style={{fontSize:12.5,fontWeight:800}}>Grade {gl}</span>
+                    <span style={{fontSize:11,opacity:0.8}}>{glSecs.length} section{glSecs.length===1?"":"s"}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:10}}>
+                    {glSecs.map(sec=>{
+                      const adviser=teachers.find(t=>t.id===sec.adviser_id);
+                      const secStudents=students.filter(s=>s.section_id===sec.id);
+                      const count=secStudents.length;
+                      const isTveGrade=gl>=8&&gl<=10;
+                      const qualBreakdown=isTveGrade
+                        ?qualifications.map(q=>({
+                            name:q.name,
+                            count:secStudents.filter(s=>s.tve_qualification===q.name).length,
+                          })).filter(g=>g.count>0)
+                        :[];
+                      const unassignedCount=isTveGrade
+                        ?secStudents.filter(s=>!s.tve_qualification||
+                            !qualifications.some(q=>q.name===s.tve_qualification)).length
+                        :0;
+                      return (
+                        <Card key={sec.id} style={{padding:"12px 14px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
                           <div>
-                            <div style={{fontWeight:700,fontSize:13,color:T.text}}>{sec.name}</div>
-                            <div style={{fontSize:11,color:T.textMuted}}>{count} students</div>
-                          </div>
-                          <div style={{display:"flex",gap:4}}>
-                            <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
-                              onClick={()=>setEditSection(sec)}>✏️</Btn>
-                            <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
-                              onClick={()=>delSection(sec.id)}>🗑️</Btn>
-                          </div>
-                        </div>
-                        {isTveGrade&&(
-                          <div style={{marginBottom:8,padding:"6px 8px",background:"#f3e5f5",
-                            borderRadius:6}}>
-                            <div style={{fontSize:10,fontWeight:700,color:"#7b1fa2",marginBottom:4}}>
-                              🎯 By TVE Qualification
+                            <div style={{display:"flex",justifyContent:"space-between",
+                              alignItems:"center",marginBottom:6}}>
+                              <div>
+                                <div style={{fontWeight:800,fontSize:14,color:T.text}}>{sec.name}</div>
+                                <div style={{fontSize:11,color:T.textMuted}}>{count} learners enrolled</div>
+                              </div>
+                              <div style={{display:"flex",gap:4}}>
+                                <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
+                                  onClick={()=>setEditSection(sec)} title="Edit Section">✏️</Btn>
+                                <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
+                                  onClick={()=>delSection(sec.id)} title="Delete Section">🗑️</Btn>
+                              </div>
                             </div>
-                            {qualBreakdown.length===0&&unassignedCount===0
-                              ?<div style={{fontSize:10,color:T.gray}}>No students yet.</div>
-                              :(
-                                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                                  {qualBreakdown.map(g=>(
-                                    <span key={g.name} style={{fontSize:10,color:T.text,
-                                      background:"#fff",borderRadius:10,padding:"2px 8px",
-                                      border:"1px solid #d8b8d8"}}>
-                                      {g.name}: <strong>{g.count}</strong>
-                                    </span>
-                                  ))}
-                                  {unassignedCount>0&&(
-                                    <span style={{fontSize:10,color:T.red,background:"#fff",
-                                      borderRadius:10,padding:"2px 8px",border:"1px solid #f0c0c0"}}>
-                                      Unassigned: <strong>{unassignedCount}</strong>
-                                    </span>
-                                  )}
+                            {isTveGrade&&(
+                              <div style={{marginBottom:10,padding:"6px 8px",background:"var(--accent-purple-bg)",
+                                borderRadius:6,border:"1px solid rgba(124,58,237,0.15)"}}>
+                                <div style={{fontSize:10,fontWeight:800,color:T.purple,marginBottom:4}}>
+                                  🎯 TVE Qualifications
                                 </div>
-                              )}
+                                {qualBreakdown.length===0&&unassignedCount===0
+                                  ?<div style={{fontSize:10,color:T.gray}}>No learners enrolled yet.</div>
+                                  :(
+                                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                                      {qualBreakdown.map(g=>(
+                                        <span key={g.name} style={{fontSize:9.5,color:T.text,
+                                          background:"#fff",borderRadius:10,padding:"2px 7px",
+                                          border:"1px solid rgba(124,58,237,0.25)"}}>
+                                          {g.name}: <strong>{g.count}</strong>
+                                        </span>
+                                      ))}
+                                      {unassignedCount>0&&(
+                                        <span style={{fontSize:9.5,color:T.red,background:"#fff",
+                                          borderRadius:10,padding:"2px 7px",border:"1px solid rgba(225,29,72,0.25)"}}>
+                                          Unassigned: <strong>{unassignedCount}</strong>
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <div style={{fontSize:11,color:T.textMuted,flexShrink:0}}>Adviser:</div>
-                          <select value={sec.adviser_id||""}
-                            onChange={e=>reassignAdviser(sec.id,e.target.value)}
-                            style={{fontSize:12,padding:"5px 8px"}}>
-                            <option value="">-- Unassigned --</option>
-                            {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                          <div style={{display:"flex",alignItems:"center",gap:8,paddingTop:8,borderTop:"1px solid var(--border-subtle)"}}>
+                            <div style={{fontSize:11,color:T.textMuted,fontWeight:700,flexShrink:0}}>Adviser:</div>
+                            <select value={sec.adviser_id||""}
+                              onChange={e=>reassignAdviser(sec.id,e.target.value)}
+                              style={{fontSize:11.5,padding:"4px 8px",flex:1}}>
+                              <option value="">-- Unassigned --</option>
+                              {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -5478,316 +5960,675 @@ const AdminDashboard = ({ profile, onLogout }) => {
 
         {tab==="subjects"&&(
           <div>
-            <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:6}}>📚 Subjects & Teaching Assignments</div>
+            <div style={{fontSize:15,fontWeight:800,color:T.green1,marginBottom:4}}>📚 Subjects & Teaching Assignments</div>
             <div style={{fontSize:12,color:T.textMuted,marginBottom:12,lineHeight:1.6}}>
-              Assign by <strong>Subject + Section + Teacher</strong>. One subject can now have many teachers,
-              and each teacher can be assigned to different sections without creating duplicate subject records.
+              Assign by <strong>Subject + Section + Teacher</strong> without creating duplicate subject records.
             </div>
 
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Subject</div>
-              <div style={{display:"grid",gap:8,marginBottom:8}}>
-                <input placeholder="Subject Name * e.g. Mathematics" value={nSubject.name}
-                  onChange={e=>setNSubject(p=>({...p,name:e.target.value}))}/>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  <select value={nSubject.grade_level}
-                    onChange={e=>setNSubject(p=>({...p,grade_level:e.target.value,tve_qualification:""}))}>
-                    {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
-                  </select>
-                  <select value={nSubject.section_id}
-                    onChange={e=>setNSubject(p=>({...p,section_id:e.target.value}))}>
-                    <option value="">-- All sections in grade --</option>
-                    {sections.filter(s=>s.grade_level===parseInt(nSubject.grade_level)).map(s=>
-                      <option key={s.id} value={s.id}>{s.name} only</option>)}
-                  </select>
-                </div>
-                {parseInt(nSubject.grade_level)>=8&&parseInt(nSubject.grade_level)<=10&&(
-                  <select value={nSubject.tve_qualification}
-                    onChange={e=>setNSubject(p=>({...p,tve_qualification:e.target.value}))}>
-                    <option value="">-- TVE Qualification (opt) --</option>
-                    {qualifications.map(q=><option key={q.name} value={q.name}>{q.name}</option>)}
-                  </select>
-                )}
-                {(parseInt(nSubject.grade_level)===11||parseInt(nSubject.grade_level)===12)&&(
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <select value={nSubject.term}
-                      onChange={e=>setNSubject(p=>({...p,term:e.target.value}))}>
-                      <option value="">-- All terms (default) --</option>
-                      <option value="1">Term 1 only</option>
-                      <option value="2">Term 2 only</option>
-                      <option value="3">Term 3 only</option>
-                    </select>
-                    <select value={nSubject.curriculum}
-                      onChange={e=>setNSubject(p=>({...p,curriculum:e.target.value,shs_track:""}))}>
-                      <option value="regular">Curriculum: Regular</option>
-                      <option value="als">Curriculum: ALS</option>
-                    </select>
-                    {nSubject.curriculum!=="als"&&(
-                      <select value={nSubject.shs_track} style={{gridColumn:"1 / -1"}}
-                        onChange={e=>setNSubject(p=>({...p,shs_track:e.target.value}))}>
-                        <option value="">-- All tracks (default) --</option>
-                        {(parseInt(nSubject.grade_level)===11?GRADE11_TRACKS:GRADE12_TRACKS)
-                          .map(t=><option key={t} value={t}>{t} only</option>)}
+            {/* 3-Way Segmented View Selector */}
+            <div className="segmented-view-picker">
+              <button
+                className={`segmented-view-btn ${subjectSubview==="roster"?"active":""}`}
+                onClick={()=>setSubjectSubview("roster")}
+              >
+                📋 Subject Roster ({subjects.filter(s=>!s.parent_subject_id).length})
+              </button>
+              <button
+                className={`segmented-view-btn ${subjectSubview==="matrix"?"active":""}`}
+                onClick={()=>setSubjectSubview("matrix")}
+              >
+                ⚡ Assignment Matrix (Gr. {assignmentGrade})
+              </button>
+              <button
+                className={`segmented-view-btn ${subjectSubview==="summary"?"active":""}`}
+                onClick={()=>setSubjectSubview("summary")}
+              >
+                📊 Workload Summary
+              </button>
+            </div>
+
+            {/* View 1: Subject Roster & Add Form */}
+            {subjectSubview==="roster"&&(
+              <div>
+                <Card style={{marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>➕ Add Subject</div>
+                  <div style={{display:"grid",gap:8,marginBottom:8}}>
+                    <input placeholder="Subject Name * e.g. Mathematics" value={nSubject.name}
+                      onChange={e=>setNSubject(p=>({...p,name:e.target.value}))}/>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <select value={nSubject.grade_level}
+                        onChange={e=>setNSubject(p=>({...p,grade_level:e.target.value,tve_qualification:""}))}>
+                        {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
+                      </select>
+                      <select value={nSubject.section_id}
+                        onChange={e=>setNSubject(p=>({...p,section_id:e.target.value}))}>
+                        <option value="">-- All sections in grade --</option>
+                        {sections.filter(s=>s.grade_level===parseInt(nSubject.grade_level)).map(s=>
+                          <option key={s.id} value={s.id}>{s.name} only</option>)}
+                      </select>
+                    </div>
+                    {parseInt(nSubject.grade_level)>=8&&parseInt(nSubject.grade_level)<=10&&(
+                      <select value={nSubject.tve_qualification}
+                        onChange={e=>setNSubject(p=>({...p,tve_qualification:e.target.value}))}>
+                        <option value="">-- TVE Qualification (opt) --</option>
+                        {qualifications.map(q=><option key={q.name} value={q.name}>{q.name}</option>)}
                       </select>
                     )}
+                    {(parseInt(nSubject.grade_level)===11||parseInt(nSubject.grade_level)===12)&&(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                        <select value={nSubject.term}
+                          onChange={e=>setNSubject(p=>({...p,term:e.target.value}))}>
+                          <option value="">-- All terms (default) --</option>
+                          <option value="1">Term 1 only</option>
+                          <option value="2">Term 2 only</option>
+                          <option value="3">Term 3 only</option>
+                        </select>
+                        <select value={nSubject.curriculum}
+                          onChange={e=>setNSubject(p=>({...p,curriculum:e.target.value,shs_track:""}))}>
+                          <option value="regular">Curriculum: Regular</option>
+                          <option value="als">Curriculum: ALS</option>
+                        </select>
+                        {nSubject.curriculum!=="als"&&(
+                          <select value={nSubject.shs_track} style={{gridColumn:"1 / -1"}}
+                            onChange={e=>setNSubject(p=>({...p,shs_track:e.target.value}))}>
+                            <option value="">-- All tracks (default) --</option>
+                            {(parseInt(nSubject.grade_level)===11?GRADE11_TRACKS:GRADE12_TRACKS)
+                              .map(t=><option key={t} value={t}>{t} only</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                    <select value={nSubject.teacher_id}
+                      onChange={e=>setNSubject(p=>({...p,teacher_id:e.target.value}))}>
+                      <option value="">-- Assign Teacher (opt) --</option>
+                      {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    {nSubject.name.trim().toUpperCase()==="MAPEH"&&(
+                      <div style={{fontSize:10,color:T.textMuted,padding:"6px 8px",background:"var(--accent-purple-bg)",borderRadius:6}}>
+                        🧩 MAPEH is never graded directly — "PE and Health" and "Music and Arts"
+                        components will be created automatically underneath it.
+                      </div>
+                    )}
                   </div>
-                )}
-                <select value={nSubject.teacher_id}
-                  onChange={e=>setNSubject(p=>({...p,teacher_id:e.target.value}))}>
-                  <option value="">-- Assign Teacher (opt) --</option>
-                  {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                {nSubject.name.trim().toUpperCase()==="MAPEH"&&(
-                  <div style={{fontSize:10,color:T.textMuted,padding:"6px 8px",background:"#f3e5f5",borderRadius:6}}>
-                    🧩 MAPEH is never graded directly — "PE and Health" and "Music and Arts"
-                    components will be created automatically underneath it.
-                  </div>
-                )}
-              </div>
-              <Btn onClick={addSubject} style={{width:"100%"}}>➕ Add Subject</Btn>
-            </Card>
+                  <Btn onClick={addSubject} style={{width:"100%"}}>➕ Add Subject</Btn>
+                </Card>
 
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>📋 All Subjects</div>
-              {GRADE_LEVELS.map(gl=>{
-                const glSubs=subjects.filter(s=>s.grade_level===gl&&!s.parent_subject_id);
-                if (!glSubs.length) return null;
-                return (
-                  <div key={gl} style={{marginBottom:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.white,background:T.green1,
-                      padding:"4px 10px",borderRadius:6,marginBottom:6}}>Grade {gl}</div>
-                    {glSubs.map(sub=>{
-                      const sec=sections.find(s=>s.id===sub.section_id);
-                      const assignedCount=assignmentRowsFor(sub.id).length;
-                      const glSections=sections.filter(s=>s.grade_level===gl);
+                {/* Grade Filter Bar for Roster */}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,fontWeight:800,color:T.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>
+                    Filter Grade:
+                  </span>
+                  <div className="grade-pill-group">
+                    <button
+                      className={`grade-pill ${subjectRosterGrade==="all"?"active":""}`}
+                      onClick={()=>setSubjectRosterGrade("all")}
+                    >
+                      All Grades ({subjects.filter(s=>!s.parent_subject_id).length})
+                    </button>
+                    {GRADE_LEVELS.map(gl=>{
+                      const count = subjects.filter(s=>s.grade_level===gl&&!s.parent_subject_id).length;
                       return (
-                        <div key={sub.id} style={{display:"flex",justifyContent:"space-between",
-                          alignItems:"center",padding:"8px 4px",borderBottom:"1px solid #f0f0f0",gap:8,flexWrap:"wrap"}}>
-                          <div>
-                            <div style={{fontWeight:700,fontSize:12,color:T.text}}>{sub.name}</div>
-                            <div style={{fontSize:10,color:T.textMuted}}>
-                              {sec?sec.name:"All sections"}
-                              {sub.tve_qualification?` · ${sub.tve_qualification}`:""}
-                              {sub.shs_track?` · ${sub.shs_track} only`:""}
-                              {sub.curriculum==="als"?" · ALS":""}
-                              {" · "}{assignedCount} teacher{assignedCount===1?"":"s"} assigned
+                        <button
+                          key={gl}
+                          className={`grade-pill ${subjectRosterGrade===String(gl)?"active":""}`}
+                          onClick={()=>setSubjectRosterGrade(String(gl))}
+                        >
+                          Gr. {gl} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <Card style={{marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>📋 Subject Offerings</div>
+                  {(subjectRosterGrade==="all"?GRADE_LEVELS:[parseInt(subjectRosterGrade)]).map(gl=>{
+                    const glSubs=subjects.filter(s=>s.grade_level===gl&&!s.parent_subject_id);
+                    if (!glSubs.length) return null;
+                    return (
+                      <div key={gl} style={{marginBottom:14}}>
+                        <div style={{
+                          display:"flex",justifyContent:"space-between",alignItems:"center",
+                          background:"linear-gradient(90deg, #0f172a, #1e293b)",color:"#fff",
+                          padding:"5px 12px",borderRadius:"var(--radius-md)",marginBottom:8
+                        }}>
+                          <span style={{fontSize:12,fontWeight:800}}>Grade {gl}</span>
+                          <span style={{fontSize:10.5,opacity:0.8}}>{glSubs.length} subject{glSubs.length===1?"":"s"}</span>
+                        </div>
+                        <div style={{display:"grid",gap:6}}>
+                          {glSubs.map(sub=>{
+                            const sec=sections.find(s=>s.id===sub.section_id);
+                            const assignedCount=assignmentRowsFor(sub.id).length;
+                            const glSections=sections.filter(s=>s.grade_level===gl);
+                            return (
+                              <div key={sub.id} style={{
+                                display:"flex",justifyContent:"space-between",alignItems:"center",
+                                padding:"8px 10px",background:T.bgPanel,borderRadius:"var(--radius-md)",
+                                border:"1px solid var(--border-subtle)",gap:8,flexWrap:"wrap"
+                              }}>
+                                <div>
+                                  <div style={{fontWeight:800,fontSize:13,color:T.text}}>{sub.name}</div>
+                                  <div style={{fontSize:10.5,color:T.textMuted,marginTop:2,display:"flex",gap:6,flexWrap:"wrap"}}>
+                                    <span style={{background:"#fff",padding:"1px 6px",borderRadius:4,border:"1px solid var(--border-subtle)"}}>
+                                      {sec?sec.name:"All sections"}
+                                    </span>
+                                    {sub.tve_qualification&&<Badge text={sub.tve_qualification} color={T.purple}/>}
+                                    {sub.shs_track&&<Badge text={sub.shs_track} color={T.blue}/>}
+                                    {sub.curriculum==="als"&&<Badge text="ALS" color={T.yellowDark}/>}
+                                    <span style={{color:assignedCount>0?T.green3:T.red,fontWeight:700}}>
+                                      {assignedCount} teacher{assignedCount===1?"":"s"} assigned
+                                    </span>
+                                  </div>
+                                </div>
+                                <div style={{display:"flex",gap:5,flexShrink:0,alignItems:"center"}}>
+                                  {glSections.length>1&&(
+                                    <select value={sub.section_id||""} style={{fontSize:11,padding:"4px 6px"}}
+                                      onChange={e=>{
+                                        const newSec=e.target.value;
+                                        const label=newSec?sections.find(s=>s.id===newSec)?.name:"All sections";
+                                        if (window.confirm(`Move "${sub.name}" to "${label}"? Existing grades stay attached to this subject.`)) {
+                                          reassignSubjectSection(sub.id,newSec);
+                                        }
+                                      }}>
+                                      <option value="">-- All sections --</option>
+                                      {glSections.map(s=><option key={s.id} value={s.id}>{s.name} only</option>)}
+                                    </select>
+                                  )}
+                                  <Btn color={T.green3} style={{padding:"5px 9px",fontSize:11}}
+                                    onClick={()=>setEditSubject(sub)} title="Edit Subject">✏️</Btn>
+                                  <Btn color={T.red} style={{padding:"5px 9px",fontSize:11}}
+                                    onClick={()=>{
+                                      if (window.confirm(`Delete "${sub.name}" (Grade ${sub.grade_level})? This also deletes every recorded grade for this subject. This cannot be undone.`)) delSubject(sub.id);
+                                    }} title="Delete Subject">🗑️</Btn>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {subjects.filter(s=>!s.parent_subject_id).length===0&&(
+                    <div style={{padding:16,textAlign:"center",color:T.gray,fontSize:12}}>No subjects yet. Add one above.</div>
+                  )}
+                </Card>
+              </div>
+            )}
+
+            {/* View 2: Assignment Matrix */}
+            {subjectSubview==="matrix"&&(
+              <div>
+                <Card style={{marginBottom:12,padding:12}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>GRADE MATRIX</label>
+                      <select value={assignmentGrade} onChange={e=>setAssignmentGrade(parseInt(e.target.value))}>
+                        {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>FILTER TEACHER</label>
+                      <select value={assignmentTeacherFilter} onChange={e=>setAssignmentTeacherFilter(e.target.value)}>
+                        <option value="">All teachers</option>
+                        {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>SEARCH SUBJECT</label>
+                      <input value={assignmentSearch} onChange={e=>setAssignmentSearch(e.target.value)} placeholder="e.g. Mathematics"/>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card style={{padding:0,overflow:"hidden",marginBottom:14}}>
+                  <div style={{padding:"10px 14px",background:"linear-gradient(90deg, #0f172a, #1e293b)",color:T.white,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:13}}>Grade {assignmentGrade} Assignment Matrix</div>
+                      <div style={{fontSize:10.5,opacity:.85}}>Tap a cell button to assign or remove a teacher.</div>
+                    </div>
+                    <div style={{fontSize:11,fontWeight:700,background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:10}}>
+                      {sections.filter(s=>s.grade_level===assignmentGrade).length} sections
+                    </div>
+                  </div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",minWidth:760,borderCollapse:"separate",borderSpacing:0}}>
+                      <thead>
+                        <tr>
+                          <th style={{position:"sticky",left:0,zIndex:3,background:T.bgPanel,textAlign:"left",padding:"8px 12px",fontSize:10,color:T.textMuted,borderBottom:"1px solid var(--border-subtle)"}}>SUBJECT</th>
+                          {sections.filter(sec=>sec.grade_level===assignmentGrade).map(sec=><th key={sec.id} style={{padding:"8px 10px",fontSize:10.5,color:T.textMuted,borderBottom:"1px solid var(--border-subtle)",whiteSpace:"nowrap"}}>{sec.name}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).map(sub=>{
+                          const secList=sections.filter(sec=>sec.grade_level===assignmentGrade);
+                          return (
+                            <tr key={sub.id}>
+                              <td style={{position:"sticky",left:0,zIndex:2,background:T.white,padding:"9px 12px",borderBottom:"1px solid var(--border-subtle)",minWidth:170}}>
+                                <div style={{fontWeight:800,fontSize:12,color:T.text}}>{sub.name}</div>
+                                {sub.tve_qualification&&<div style={{fontSize:9,color:T.purple,marginTop:2}}>{sub.tve_qualification}</div>}
+                                <button disabled={assignmentBusy} onClick={()=>removeAllSubjectAssignments(sub)} style={{border:0,background:"none",color:T.red,fontSize:9,fontWeight:700,padding:"3px 0",cursor:"pointer"}}>Clear all</button>
+                              </td>
+                              {secList.map(sec=>{
+                                const allRows=assignmentRowsFor(sub.id).filter(a=>a.section_id===sec.id || !a.section_id);
+                                const rows=allRows.filter(a=>!assignmentTeacherFilter||a.teacher_id===assignmentTeacherFilter);
+                                return (
+                                  <td key={sec.id} style={{padding:6,borderBottom:"1px solid var(--border-subtle)",verticalAlign:"top",minWidth:125}}>
+                                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                                      {rows.map(a=>{
+                                        const teacher=teachers.find(t=>t.id===a.teacher_id);
+                                        return <button key={a.id} disabled={assignmentBusy} onClick={()=>toggleSubjectAssignment(sub,a.teacher_id,a.section_id||null)} title="Remove assignment" style={{textAlign:"left",border:"1px solid var(--border-default)",background:assignmentTeacherFilter===a.teacher_id?"var(--accent-bg)":"#f8fafc",borderRadius:7,padding:"5px 7px",cursor:"pointer",fontSize:10,color:T.text,fontWeight:700}}>{teacher?.name||"Unknown"}<span style={{display:"block",fontSize:8,color:T.textMuted,fontWeight:500}}>{a.section_id?"section assignment":"all sections"} · tap to remove</span></button>;
+                                      })}
+                                      <select disabled={assignmentBusy} value="" onChange={e=>{if(e.target.value)toggleSubjectAssignment(sub,e.target.value,sec.id);}} style={{fontSize:10,padding:"6px 5px",borderStyle:"dashed",color:T.green2,fontWeight:800,background:"transparent"}}>
+                                        <option value="">＋ Assign teacher</option>
+                                        {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                                      </select>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).length===0&&(
+                    <div style={{padding:20,textAlign:"center",color:T.gray,fontSize:12}}>No subjects match this grade/search.</div>
+                  )}
+                </Card>
+
+                <Card style={{marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:5}}>⚡ Quick Multi-Section Assignment</div>
+                  <div style={{fontSize:11,color:T.textMuted,marginBottom:9}}>Use this when one teacher handles the same subject across several sections.</div>
+                  <QuickAssignmentForm
+                    subjects={subjects.filter(s=>s.grade_level===assignmentGrade&&!s.parent_subject_id)}
+                    sections={sections.filter(s=>s.grade_level===assignmentGrade)}
+                    teachers={teachers}
+                    onAssign={async({subjectId,teacherId,sectionIds,allSections})=>{
+                      const sub=subjects.find(s=>s.id===subjectId);
+                      if (!sub) return;
+                      if (allSections) {
+                        setAssignmentBusy(true);
+                        const error=await ensureSubjectAssignments([{subject_id:sub.id,teacher_id:teacherId,section_id:null}]);
+                        setAssignmentBusy(false);
+                        if (error) notify("❌ "+error.message); else { notify("✅ Teacher assigned to all sections in this grade."); fetchAll(); }
+                      } else await copyGradeAssignments(sub,null,sectionIds,teacherId);
+                    }}
+                    busy={assignmentBusy}
+                  />
+                </Card>
+              </div>
+            )}
+
+            {/* View 3: Workload Summary */}
+            {subjectSubview==="summary"&&(
+              <div>
+                <div style={{fontSize:13,fontWeight:800,color:T.green1,margin:"6px 0 10px"}}>📋 Teacher Workload Overview</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:8}}>
+                  {teachers.filter(t=>!assignmentTeacherFilter||t.id===assignmentTeacherFilter).map(t=>{
+                    const rows=subjectAssignments.filter(a=>a.teacher_id===t.id);
+                    if (!rows.length) return null;
+                    return <Card key={t.id} style={{padding:"10px 12px"}}>
+                      <div style={{fontWeight:800,fontSize:13,color:T.text}}>{t.name}</div>
+                      <div style={{fontSize:10.5,color:T.textMuted,marginBottom:6}}>{rows.length} total assignment{rows.length===1?"":"s"}</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                        {rows.map(a=>{
+                          const sub=subjects.find(s=>s.id===a.subject_id),sec=sections.find(s=>s.id===a.section_id);
+                          if (!sub) return null;
+                          return <span key={a.id} style={{fontSize:9.5,padding:"3px 8px",borderRadius:999,background:T.bgPanel,color:T.text,border:"1px solid var(--border-subtle)"}}>
+                            {sub.name} · {sec?.name||`All Gr.${sub.grade_level}`}
+                          </span>;
+                        })}
+                      </div>
+                    </Card>;
+                  })}
+                </div>
+
+                <Card style={{marginTop:14,padding:12,background:"#fffaf0",border:"1px solid #f4dfae"}}>
+                  <div style={{fontSize:11,fontWeight:800,color:T.yellowDark,marginBottom:3}}>💡 How AGRIANS now thinks about teaching load</div>
+                  <div style={{fontSize:10.5,color:T.textMuted,lineHeight:1.6}}>
+                    One subject is created once. Teachers are assigned to the sections they actually handle.
+                    This means Mathematics can have Teacher A in Section A, Teacher B in Section B, and Teacher A again in Section C — without duplicate subject records.
+                  </div>
+                </Card>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab==="grades"&&(()=>{
+          const filteredGrades = grades.filter(g=>{
+            const stu = students.find(s=>s.id===g.student_id);
+            const sub = subjects.find(s=>s.id===g.subject_id);
+            if (!stu || !sub) return false;
+            if (gradeFilterGrade !== "all" && String(stu.grade_level) !== String(gradeFilterGrade)) return false;
+            if (gradeFilterTerm !== "all" && String(g.term) !== String(gradeFilterTerm)) return false;
+            if (gradeSearchStudent.trim()) {
+              const q = gradeSearchStudent.toLowerCase();
+              const matchName = (stu.name||"").toLowerCase().includes(q);
+              const matchLrn = (stu.lrn||"").toLowerCase().includes(q);
+              const matchSub = (sub.name||"").toLowerCase().includes(q);
+              if (!matchName && !matchLrn && !matchSub) return false;
+            }
+            return true;
+          });
+
+          // Filter students for the Add Grade dropdown based on addGradeStudentGrade
+          const candidateStudents = addGradeStudentGrade === "all"
+            ? students
+            : students.filter(s => String(s.grade_level) === String(addGradeStudentGrade));
+
+          // If a student is selected in nGrade, find their grade level to filter relevant subjects
+          const selectedStudent = students.find(s => s.id === nGrade.student_id);
+          const candidateSubjects = selectedStudent
+            ? subjects.filter(s => !isMapehParent(s, subjects) && s.grade_level === selectedStudent.grade_level)
+            : subjects.filter(s => !isMapehParent(s, subjects));
+
+          return (
+            <div>
+              {/* Header & Action bar */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:16,fontWeight:800,color:T.green1}}>📝 Grade Records Management</span>
+                  <span style={{fontSize:11,fontWeight:700,background:T.bgPanel,color:T.textMuted,padding:"2px 8px",borderRadius:12,border:`1px solid ${T.borderSubtle}`}}>
+                    {grades.length} Total
+                  </span>
+                </div>
+                <button
+                  onClick={()=>setShowAddGrade(p=>!p)}
+                  style={{
+                    padding:"6px 14px",
+                    borderRadius:8,
+                    fontSize:12,
+                    fontWeight:700,
+                    background:showAddGrade ? T.bgPanel : T.green2,
+                    color:showAddGrade ? T.text : T.white,
+                    border:`1px solid ${showAddGrade ? T.borderSubtle : "transparent"}`,
+                    cursor:"pointer",
+                    display:"inline-flex",
+                    alignItems:"center",
+                    gap:6
+                  }}
+                >
+                  {showAddGrade ? "✕ Close Form" : "➕ Add / Update Grade"}
+                </button>
+              </div>
+
+              {/* Add / Update Grade Collapsible Card */}
+              {showAddGrade && (
+                <Card style={{marginBottom:14,borderLeft:`4px solid ${T.green2}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.green2}}>
+                      ➕ Record / Overwrite Grade Entry
+                    </div>
+                    {/* Grade Level helper for student dropdown */}
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <span style={{fontSize:11,color:T.textMuted}}>Filter Learner Gr:</span>
+                      {["all", ...GRADE_LEVELS].map(gl => (
+                        <button
+                          key={gl}
+                          onClick={()=>setAddGradeStudentGrade(gl)}
+                          style={{
+                            padding:"2px 7px",
+                            borderRadius:6,
+                            fontSize:10,
+                            fontWeight:700,
+                            border:"none",
+                            cursor:"pointer",
+                            background:addGradeStudentGrade===gl ? T.green2 : T.bgPanel,
+                            color:addGradeStudentGrade===gl ? T.white : T.textMuted
+                          }}
+                        >
+                          {gl==="all" ? "All" : gl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{display:"grid",gap:8,marginBottom:8}}>
+                    <select
+                      value={nGrade.student_id}
+                      onChange={e=>setNGrade(p=>({...p,student_id:e.target.value}))}
+                    >
+                      <option value="">-- Select Student ({candidateStudents.length} available) --</option>
+                      {candidateStudents.map(s=>(
+                        <option key={s.id} value={s.id}>
+                          Gr.{s.grade_level} · {studentDisplay(s)} (LRN: {s.lrn})
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={nGrade.subject_id}
+                      onChange={e=>setNGrade(p=>({...p,subject_id:e.target.value}))}
+                    >
+                      <option value="">-- Select Subject ({candidateSubjects.length} available) --</option>
+                      {candidateSubjects.map(s=>(
+                        <option key={s.id} value={s.id}>
+                          {s.name}{s.parent_subject_id?" (MAPEH component)":""} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""})
+                        </option>
+                      ))}
+                    </select>
+
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                      <select value={nGrade.term} onChange={e=>setNGrade(p=>({...p,term:e.target.value}))}>
+                        <option value={1}>Term 1</option>
+                        <option value={2}>Term 2</option>
+                        <option value={3}>Term 3</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        placeholder="Numeric Grade (0-100) *"
+                        value={nGrade.grade}
+                        onChange={e=>setNGrade(p=>({...p,grade:e.target.value}))}
+                      />
+                    </div>
+                  </div>
+                  <Btn onClick={saveGrade} style={{width:"100%"}}>💾 Save Grade Record</Btn>
+                </Card>
+              )}
+
+              {/* Roster Toolbar with Filters & Search */}
+              <div className="roster-toolbar" style={{flexDirection:"column",alignItems:"stretch",gap:10}}>
+                {/* Search input */}
+                <div style={{position:"relative",width:"100%"}}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search learner name, LRN, or subject..."
+                    value={gradeSearchStudent}
+                    onChange={e=>{setGradeSearchStudent(e.target.value); setGradeDisplayLimit(40);}}
+                    style={{width:"100%",paddingRight:gradeSearchStudent?28:10}}
+                  />
+                  {gradeSearchStudent && (
+                    <button
+                      onClick={()=>setGradeSearchStudent("")}
+                      style={{
+                        position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+                        background:"none",border:"none",color:T.textMuted,cursor:"pointer",fontSize:13
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Grade pills & Term filters */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                  {/* Grade Level Pills */}
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:T.textMuted,marginRight:2}}>Grade:</span>
+                    <button
+                      className={`grade-pill ${gradeFilterGrade==="all"?"active":""}`}
+                      onClick={()=>{setGradeFilterGrade("all"); setGradeDisplayLimit(40);}}
+                    >
+                      All
+                    </button>
+                    {GRADE_LEVELS.map(gl => (
+                      <button
+                        key={gl}
+                        className={`grade-pill ${String(gradeFilterGrade)===String(gl)?"active":""}`}
+                        onClick={()=>{setGradeFilterGrade(gl); setGradeDisplayLimit(40);}}
+                      >
+                        Gr.{gl}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Term Selector Pills */}
+                  <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:T.textMuted,marginRight:2}}>Term:</span>
+                    {["all", 1, 2, 3].map(t => (
+                      <button
+                        key={t}
+                        onClick={()=>{setGradeFilterTerm(t); setGradeDisplayLimit(40);}}
+                        style={{
+                          padding:"3px 8px",
+                          borderRadius:6,
+                          fontSize:11,
+                          fontWeight:700,
+                          border:`1px solid ${String(gradeFilterTerm)===String(t) ? T.green2 : T.borderSubtle}`,
+                          background:String(gradeFilterTerm)===String(t) ? T.green2 : T.bgSurface,
+                          color:String(gradeFilterTerm)===String(t) ? T.white : T.textMuted,
+                          cursor:"pointer"
+                        }}
+                      >
+                        {t==="all" ? "All" : `Term ${t}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Results status header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"10px 0 8px 4px",fontSize:11,color:T.textMuted}}>
+                <span>
+                  Showing {Math.min(filteredGrades.length, gradeDisplayLimit)} of {filteredGrades.length} records
+                  {(gradeFilterGrade!=="all" || gradeFilterTerm!=="all" || gradeSearchStudent) && (
+                    <button
+                      onClick={()=>{
+                        setGradeFilterGrade("all");
+                        setGradeFilterTerm("all");
+                        setGradeSearchStudent("");
+                      }}
+                      style={{marginLeft:8,background:"none",border:"none",color:T.blue,cursor:"pointer",fontWeight:600}}
+                    >
+                      (Reset filters)
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              {/* Records List */}
+              {filteredGrades.length===0 ? (
+                <Card style={{textAlign:"center",padding:28,color:T.textMuted}}>
+                  <div style={{fontSize:28,marginBottom:6}}>🔍</div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:4}}>No Grade Records Found</div>
+                  <div style={{fontSize:12}}>
+                    {grades.length === 0
+                      ? "No grades have been encoded into the system yet."
+                      : "Try adjusting your search query, grade level, or term filter."}
+                  </div>
+                </Card>
+              ) : (
+                <>
+                  <div style={{display:"grid",gap:6}}>
+                    {filteredGrades.slice(0, gradeDisplayLimit).map(g => {
+                      const stu = students.find(s=>s.id===g.student_id);
+                      const sub = subjects.find(s=>s.id===g.subject_id);
+                      if (!stu || !sub) return null;
+                      const sec = sections.find(s=>s.id===stu.section_id);
+                      const rem = remark(g.grade);
+
+                      return (
+                        <div key={`${g.student_id}-${g.subject_id}-${g.term}`} className="grade-record-row">
+                          <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+                            <div style={{
+                              width:32,height:32,borderRadius:8,
+                              background:stu.gender==="Female"?"#fdf2f8":"#f0fdf4",
+                              color:stu.gender==="Female"?"#db2777":"#059669",
+                              display:"flex",alignItems:"center",justifyContent:"center",
+                              fontWeight:800,fontSize:12,flexShrink:0,
+                              border:`1px solid ${stu.gender==="Female"?"#fbcfe8":"#bbf7d0"}`
+                            }}>
+                              {stu.gender==="Female"?"F":"M"}
+                            </div>
+                            <div style={{minWidth:0,flex:1}}>
+                              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                <span style={{fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                  {stu.name}
+                                </span>
+                                <span style={{fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:4,background:T.bgPanel,color:T.textMuted}}>
+                                  Gr.{stu.grade_level} {sec ? `· ${sec.name}` : ""}
+                                </span>
+                                {stu.lrn && (
+                                  <span style={{fontSize:10,color:T.textMuted,fontFamily:"monospace"}}>
+                                    LRN: {stu.lrn}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2,flexWrap:"wrap"}}>
+                                <span style={{fontSize:11,fontWeight:600,color:T.green2}}>
+                                  {sub.name}
+                                </span>
+                                <span style={{fontSize:10,color:T.textMuted}}>
+                                  · Term {g.term}
+                                </span>
+                                {sub.tve_qualification && (
+                                  <span style={{fontSize:10,padding:"0 4px",borderRadius:3,background:"#fef3c7",color:"#92400e"}}>
+                                    {sub.tve_qualification}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <div style={{display:"flex",gap:4,flexShrink:0,alignItems:"center"}}>
-                            {glSections.length>1&&(
-                              <select value={sub.section_id||""} style={{fontSize:11,padding:"4px 6px"}}
-                                onChange={e=>{
-                                  const newSec=e.target.value;
-                                  const label=newSec?sections.find(s=>s.id===newSec)?.name:"All sections";
-                                  if (window.confirm(`Move "${sub.name}" to "${label}"? Existing grades stay attached to this subject — this only changes which section(s) see it.`)) {
-                                    reassignSubjectSection(sub.id,newSec);
-                                  }
-                                }}>
-                                <option value="">-- All sections --</option>
-                                {glSections.map(s=><option key={s.id} value={s.id}>{s.name} only</option>)}
-                              </select>
-                            )}
-                            <Btn color={T.green3} style={{padding:"5px 10px",fontSize:11}}
-                              onClick={()=>setEditSubject(sub)}>✏️</Btn>
-                            <Btn color={T.red} style={{padding:"5px 10px",fontSize:11}}
-                              onClick={()=>{
-                                if (window.confirm(`Delete "${sub.name}" (Grade ${sub.grade_level})? This also deletes every recorded grade for this subject${sub.name.trim().toUpperCase()==="MAPEH"?" and its PE and Health / Music and Arts components":""}. This cannot be undone.`)) delSubject(sub.id);
-                              }}>🗑️</Btn>
+
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:18,fontWeight:900,color:rem.c,lineHeight:1}}>
+                                {g.grade}
+                              </div>
+                              <div style={{fontSize:9,fontWeight:700,color:rem.c,marginTop:2}}>
+                                {rem.r}
+                              </div>
+                            </div>
+                            <div style={{display:"flex",gap:4}}>
+                              <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
+                                onClick={()=>setEditGrade({...g})}>✏️</Btn>
+                              <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
+                                onClick={()=>delGrade(g.student_id,g.subject_id,g.term)}>🗑️</Btn>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                );
-              })}
-              {subjects.filter(s=>!s.parent_subject_id).length===0&&(
-                <div style={{padding:16,textAlign:"center",color:T.gray,fontSize:12}}>No subjects yet. Add one above.</div>
-              )}
-            </Card>
 
-            <Card style={{marginBottom:12,padding:10}}>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8}}>
-                <div>
-                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>GRADE</label>
-                  <select value={assignmentGrade} onChange={e=>setAssignmentGrade(parseInt(e.target.value))}>
-                    {GRADE_LEVELS.map(g=><option key={g} value={g}>Grade {g}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>TEACHER</label>
-                  <select value={assignmentTeacherFilter} onChange={e=>setAssignmentTeacherFilter(e.target.value)}>
-                    <option value="">All teachers</option>
-                    {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{fontSize:10,fontWeight:800,color:T.textMuted,display:"block",marginBottom:4}}>SEARCH SUBJECT</label>
-                  <input value={assignmentSearch} onChange={e=>setAssignmentSearch(e.target.value)} placeholder="e.g. Mathematics"/>
-                </div>
-              </div>
-            </Card>
-
-            <Card style={{padding:0,overflow:"hidden",marginBottom:12}}>
-              <div style={{padding:"10px 12px",background:T.green1,color:T.white,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-                <div>
-                  <div style={{fontWeight:800,fontSize:13}}>Grade {assignmentGrade} Assignment Matrix</div>
-                  <div style={{fontSize:10,opacity:.82}}>Tap a cell to assign or remove a teacher.</div>
-                </div>
-                <div style={{fontSize:11,fontWeight:700}}>{sections.filter(s=>s.grade_level===assignmentGrade).length} sections</div>
-              </div>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",minWidth:760,borderCollapse:"separate",borderSpacing:0}}>
-                  <thead>
-                    <tr>
-                      <th style={{position:"sticky",left:0,zIndex:3,background:T.bgPanel,textAlign:"left",padding:"8px 10px",fontSize:10,color:T.textMuted,borderBottom:"1px solid #dbe5d8"}}>SUBJECT</th>
-                      {sections.filter(sec=>sec.grade_level===assignmentGrade).map(sec=><th key={sec.id} style={{padding:"8px 7px",fontSize:10,color:T.textMuted,borderBottom:"1px solid #dbe5d8",whiteSpace:"nowrap"}}>{sec.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).map(sub=>{
-                      const secList=sections.filter(sec=>sec.grade_level===assignmentGrade);
-                      return (
-                        <tr key={sub.id}>
-                          <td style={{position:"sticky",left:0,zIndex:2,background:T.white,padding:"9px 10px",borderBottom:"1px solid #edf1eb",minWidth:170}}>
-                            <div style={{fontWeight:800,fontSize:12,color:T.text}}>{sub.name}</div>
-                            {sub.tve_qualification&&<div style={{fontSize:9,color:"#7b1fa2",marginTop:2}}>{sub.tve_qualification}</div>}
-                            <button disabled={assignmentBusy} onClick={()=>removeAllSubjectAssignments(sub)} style={{border:0,background:"none",color:T.red,fontSize:9,fontWeight:700,padding:"3px 0",cursor:"pointer"}}>Clear all</button>
-                          </td>
-                          {secList.map(sec=>{
-                            const allRows=assignmentRowsFor(sub.id).filter(a=>a.section_id===sec.id || !a.section_id);
-                            const rows=allRows.filter(a=>!assignmentTeacherFilter||a.teacher_id===assignmentTeacherFilter);
-                            return (
-                              <td key={sec.id} style={{padding:5,borderBottom:"1px solid #edf1eb",verticalAlign:"top",minWidth:125}}>
-                                <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                                  {rows.map(a=>{
-                                    const teacher=teachers.find(t=>t.id===a.teacher_id);
-                                    return <button key={a.id} disabled={assignmentBusy} onClick={()=>toggleSubjectAssignment(sub,a.teacher_id,a.section_id||null)} title="Remove assignment" style={{textAlign:"left",border:"1px solid #cfe0d0",background:assignmentTeacherFilter===a.teacher_id?"#dff2e3":"#f7fbf7",borderRadius:7,padding:"5px 6px",cursor:"pointer",fontSize:10,color:T.text,fontWeight:700}}>{teacher?.name||"Unknown"}<span style={{display:"block",fontSize:8,color:T.textMuted,fontWeight:500}}>{a.section_id?"section assignment":"all sections"} · tap to remove</span></button>;
-                                  })}
-                                  <select disabled={assignmentBusy} value="" onChange={e=>{if(e.target.value)toggleSubjectAssignment(sub,e.target.value,sec.id);}} style={{fontSize:10,padding:"6px 5px",borderStyle:"dashed",color:T.green2,fontWeight:800,background:"transparent"}}>
-                                    <option value="">＋ Assign teacher</option>
-                                    {teachers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
-                                  </select>
-                                </div>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {subjects.filter(sub=>sub.grade_level===assignmentGrade&&!sub.parent_subject_id&&sub.name.toLowerCase().includes(assignmentSearch.toLowerCase())).length===0&&(
-                <div style={{padding:20,textAlign:"center",color:T.gray,fontSize:12}}>No subjects match this grade/search.</div>
-              )}
-            </Card>
-
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:800,color:T.green2,marginBottom:5}}>⚡ Quick assignment</div>
-              <div style={{fontSize:11,color:T.textMuted,marginBottom:9}}>Use this when one teacher handles the same subject for several sections.</div>
-              <QuickAssignmentForm
-                subjects={subjects.filter(s=>s.grade_level===assignmentGrade&&!s.parent_subject_id)}
-                sections={sections.filter(s=>s.grade_level===assignmentGrade)}
-                teachers={teachers}
-                onAssign={async({subjectId,teacherId,sectionIds,allSections})=>{
-                  const sub=subjects.find(s=>s.id===subjectId);
-                  if (!sub) return;
-                  if (allSections) {
-                    setAssignmentBusy(true);
-                    const error=await ensureSubjectAssignments([{subject_id:sub.id,teacher_id:teacherId,section_id:null}]);
-                    setAssignmentBusy(false);
-                    if (error) notify("❌ "+error.message); else { notify("✅ Teacher assigned to all sections in this grade."); fetchAll(); }
-                  } else await copyGradeAssignments(sub,null,sectionIds,teacherId);
-                }}
-                busy={assignmentBusy}
-              />
-            </Card>
-
-            <div style={{fontSize:13,fontWeight:800,color:T.green1,margin:"14px 0 8px"}}>📋 Assignment summary</div>
-            {teachers.filter(t=>!assignmentTeacherFilter||t.id===assignmentTeacherFilter).map(t=>{
-              const rows=subjectAssignments.filter(a=>a.teacher_id===t.id);
-              if (!rows.length) return null;
-              return <Card key={t.id} style={{marginBottom:7,padding:"9px 11px"}}>
-                <div style={{fontWeight:800,fontSize:12,color:T.text}}>{t.name}</div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:5}}>
-                  {rows.map(a=>{
-                    const sub=subjects.find(s=>s.id===a.subject_id),sec=sections.find(s=>s.id===a.section_id);
-                    if (!sub||sub.grade_level!==assignmentGrade) return null;
-                    return <span key={a.id} style={{fontSize:9,padding:"4px 7px",borderRadius:999,background:T.bgPanel,color:T.text}}>{sub.name} · {sec?.name||`All Gr.${sub.grade_level}`}</span>;
-                  })}
-                </div>
-              </Card>;
-            })}
-
-            <Card style={{marginTop:12,padding:10,background:"#fffaf0",border:"1px solid #f4dfae"}}>
-              <div style={{fontSize:11,fontWeight:800,color:T.yellowDark,marginBottom:3}}>💡 How AGRIANS now thinks about teaching load</div>
-              <div style={{fontSize:10,color:T.textMuted,lineHeight:1.6}}>
-                One subject is created once. Teachers are assigned to the sections they actually handle.
-                This means Mathematics can have Teacher A in Section A, Teacher B in Section B, and Teacher A again in Section C — without duplicate subject records.
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {tab==="grades"&&(
-          <div>
-            <div style={{fontSize:15,fontWeight:700,color:T.green1,marginBottom:10}}>📝 Manage Grades</div>
-            <Card style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.green2,marginBottom:10}}>
-                ➕ Add / Update Grade
-              </div>
-              <div style={{display:"grid",gap:8,marginBottom:8}}>
-                <select value={nGrade.student_id}
-                  onChange={e=>setNGrade(p=>({...p,student_id:e.target.value}))}>
-                  <option value="">-- Select Student --</option>
-                  {students.map(s=><option key={s.id} value={s.id}>{studentDisplay(s)} (LRN: {s.lrn})</option>)}
-                </select>
-                <select value={nGrade.subject_id}
-                  onChange={e=>setNGrade(p=>({...p,subject_id:e.target.value}))}>
-                  <option value="">-- Select Subject --</option>
-                  {subjects.filter(s=>!isMapehParent(s,subjects)).map(s=><option key={s.id} value={s.id}>
-                    {s.name}{s.parent_subject_id?" (MAPEH component)":""} (Gr.{s.grade_level}{s.tve_qualification?` · ${s.tve_qualification}`:""})
-                  </option>)}
-                </select>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  <select value={nGrade.term} onChange={e=>setNGrade(p=>({...p,term:e.target.value}))}>
-                    <option value={1}>Term 1</option><option value={2}>Term 2</option>
-                    <option value={3}>Term 3</option>
-                  </select>
-                  <input type="number" min="0" max="100" placeholder="Grade *"
-                    value={nGrade.grade} onChange={e=>setNGrade(p=>({...p,grade:e.target.value}))}/>
-                </div>
-              </div>
-              <Btn onClick={saveGrade} style={{width:"100%"}}>💾 Save Grade</Btn>
-            </Card>
-            {grades.length===0
-              ?<Card><div style={{textAlign:"center",color:T.gray,padding:16}}>No grades yet.</div></Card>
-              :grades.map(g=>{
-                const stu=students.find(s=>s.id===g.student_id);
-                const sub=subjects.find(s=>s.id===g.subject_id);
-                if (!stu||!sub) return null;
-                return (
-                  <Card key={`${g.student_id}-${g.subject_id}-${g.term}`}
-                    style={{marginBottom:6,padding:"8px 12px"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:600,color:T.text}}>{stu.name}</div>
-                        <div style={{fontSize:11,color:T.textMuted}}>{sub.name} · Term {g.term}</div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:18,fontWeight:900,color:remark(g.grade).c}}>{g.grade}</span>
-                        <Btn color={T.blue} style={{padding:"5px 8px",fontSize:11}}
-                          onClick={()=>setEditGrade({...g})}>✏️</Btn>
-                        <Btn color={T.red} style={{padding:"5px 8px",fontSize:11}}
-                          onClick={()=>delGrade(g.student_id,g.subject_id,g.term)}>🗑️</Btn>
-                      </div>
+                  {filteredGrades.length > gradeDisplayLimit && (
+                    <div style={{textAlign:"center",marginTop:12}}>
+                      <button
+                        onClick={()=>setGradeDisplayLimit(p=>p+50)}
+                        style={{
+                          padding:"8px 20px",
+                          borderRadius:8,
+                          background:T.bgPanel,
+                          border:`1px solid ${T.borderSubtle}`,
+                          color:T.text,
+                          fontSize:12,
+                          fontWeight:700,
+                          cursor:"pointer"
+                        }}
+                      >
+                        ⬇️ Load More Records ({filteredGrades.length - gradeDisplayLimit} remaining)
+                      </button>
                     </div>
-                  </Card>
-                );
-              })
-            }
-          </div>
-        )}
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {tab==="calendar"&&(
           <CalendarPanel calendar={calendar} onSave={saveSchoolDays}
