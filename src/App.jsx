@@ -73,6 +73,18 @@ const TERM_MONTHS = [
   { month:4,  year:2027, term:3, label:"April 2027",          endDay:8 },
 ];
 
+// Month choices for the official SF2 / SF4 reports only. Same as TERM_MONTHS
+// plus a "whole month" option for September, which the app splits into two
+// term halves (Sept 1-15 = term 1, Sept 16-30 = term 2). term:0 tells the
+// edge functions / school-day RPCs there is no term split, so the report
+// covers every school day of the calendar month. Do NOT use this list for
+// attendance encoding — term 0 is not a real term there.
+const SF_MONTHS = TERM_MONTHS.flatMap(m =>
+  (m.month===9 && m.year===2026 && m.term===2)
+    ? [m, { month:9, year:2026, term:0, label:"September 2026 (Whole Month)" }]
+    : [m]
+);
+
 // The actual school-day dates within one TERM_MONTHS entry: every weekday
 // (Mon–Fri) in the entry's day range, minus any date the admin has marked
 // as a non-school day (holiday/suspension). This is what drives the SF2
@@ -4604,10 +4616,10 @@ const TeacherDashboard = ({ profile, onLogout }) => {
                   onChange={e=>{
                     if (!e.target.value){setSf2Month(null);return;}
                     const [m,y,t]=e.target.value.split("-");
-                    setSf2Month(TERM_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
+                    setSf2Month(SF_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
                   }}>
                   <option value="">-- Select Month --</option>
-                  {TERM_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
+                  {SF_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
                 </select>
                 <Btn onClick={generateSF2} style={{flexShrink:0}}>📄 Generate SF2 PDF</Btn>
               </div>
@@ -6652,10 +6664,10 @@ const AdminDashboard = ({ profile, onLogout }) => {
                   onChange={e=>{
                     if (!e.target.value){setSf2Month(null);return;}
                     const [m,y,t]=e.target.value.split("-");
-                    setSf2Month(TERM_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
+                    setSf2Month(SF_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
                   }}>
                   <option value="">-- Select Month --</option>
-                  {TERM_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
+                  {SF_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
                 </select>
                 <Btn onClick={generateSF2Admin} disabled={genBusy}>📄 Generate SF2 PDF</Btn>
               </div>
@@ -6705,10 +6717,10 @@ const AdminDashboard = ({ profile, onLogout }) => {
                   onChange={e=>{
                     if (!e.target.value){setSf4Month(null);return;}
                     const [m,y,t]=e.target.value.split("-");
-                    setSf4Month(TERM_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
+                    setSf4Month(SF_MONTHS.find(x=>x.month===parseInt(m)&&x.year===parseInt(y)&&x.term===parseInt(t))||null);
                   }}>
                   <option value="">-- Select Month --</option>
-                  {TERM_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
+                  {SF_MONTHS.map((m,i)=><option key={i} value={`${m.month}-${m.year}-${m.term}`}>{m.label}</option>)}
                 </select>
                 {checkingSf4&&(
                   <div style={{fontSize:11,color:T.textMuted}}>Checking attendance encoding for this month…</div>
